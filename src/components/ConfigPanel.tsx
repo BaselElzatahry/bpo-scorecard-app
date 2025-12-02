@@ -1,18 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { Save, Plus, Trash2, Edit2, X, Check, Sliders, Download, Upload, RotateCcw } from 'lucide-react';
+import { Save, Plus, Trash2, Edit2, X, Check, Sliders, Download, Upload, RotateCcw, Building2, LayoutGrid } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import clsx from 'clsx';
 import { EnhancedKPI, SCORING_LOGIC_METADATA, ScoringLogicType } from '../types/config.types';
 import { KPIConfigModal } from './config/KPIConfigModal';
+import { VendorManagementPanel } from './VendorManagementPanel';
 
 export const ConfigPanel: React.FC = () => {
     const { config, saveConfig, resetConfig } = useApp();
+    const [searchParams] = useSearchParams();
     const [localConfig, setLocalConfig] = useState(config);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
     const [showSuccess, setShowSuccess] = useState(false);
     const [configuringKPIId, setConfiguringKPIId] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'vendors' | 'pillars'>('vendors');
+
+    // Update active tab based on URL query parameter
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab === 'pillars') {
+            setActiveTab('pillars');
+        } else {
+            setActiveTab('vendors');
+        }
+    }, [searchParams]);
 
     // --- Helper: Auto-Balance Weights ---
     const rebalanceWeights = (items: { id: string, weight: number }[], targetTotal: number = 100) => {
@@ -180,7 +194,7 @@ export const ConfigPanel: React.FC = () => {
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-3xl font-black text-slate-900">⚙️ Configuration</h2>
-                    <p className="text-slate-500">Manage pillars, KPIs, weights, and scoring logic</p>
+                    <p className="text-slate-500">Manage vendors, pillars, KPIs, weights, and scoring logic</p>
                 </div>
                 <div className="flex gap-3">
                     <button
@@ -206,180 +220,226 @@ export const ConfigPanel: React.FC = () => {
                         <RotateCcw size={18} />
                         Reset Default
                     </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={!isValid}
-                        className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <Save size={18} />
-                        Save Changes
-                    </button>
+                    {activeTab === 'pillars' && (
+                        <button
+                            onClick={handleSave}
+                            disabled={!isValid}
+                            className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <Save size={18} />
+                            Save Changes
+                        </button>
+                    )}
                 </div>
             </div>
 
-            {
-                showSuccess && (
-                    <div className="bg-green-50 border border-green-100 text-green-700 p-4 rounded-xl text-sm font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
-                        <Check size={18} /> Configuration saved successfully!
-                    </div>
-                )
-            }
+            {/* Tab Navigation */}
+            <div className="flex gap-2 border-b-2 border-slate-100">
+                <button
+                    onClick={() => setActiveTab('vendors')}
+                    className={clsx(
+                        'px-6 py-3 font-bold flex items-center gap-2 transition-all relative',
+                        activeTab === 'vendors'
+                            ? 'text-keeta-primary'
+                            : 'text-slate-400 hover:text-slate-600'
+                    )}
+                >
+                    <Building2 size={18} />
+                    Vendors
+                    {activeTab === 'vendors' && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-keeta-primary" />
+                    )}
+                </button>
+                <button
+                    onClick={() => setActiveTab('pillars')}
+                    className={clsx(
+                        'px-6 py-3 font-bold flex items-center gap-2 transition-all relative',
+                        activeTab === 'pillars'
+                            ? 'text-keeta-primary'
+                            : 'text-slate-400 hover:text-slate-600'
+                    )}
+                >
+                    <LayoutGrid size={18} />
+                    Pillars & KPIs
+                    {activeTab === 'pillars' && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-keeta-primary" />
+                    )}
+                </button>
+            </div>
 
-            {
-                !isValid && (
-                    <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl text-sm font-bold">
-                        ⚠️ Weights must sum to 100% for categories and KPIs within each category. Please adjust before saving.
-                    </div>
-                )
-            }
+            {/* Vendors Tab */}
+            {activeTab === 'vendors' && (
+                <VendorManagementPanel />
+            )}
 
-            {/* Categories */}
-            <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-bold text-slate-800">Pillars ({totalCatWeight}%)</h3>
-                    <button onClick={addCategory} className="text-sm font-bold text-keeta-primary hover:text-amber-400 flex items-center gap-1">
-                        <Plus size={16} /> Add Pillar
-                    </button>
-                </div>
+            {/* Pillars & KPIs Tab */}
+            {activeTab === 'pillars' && (
+                <>
+                    {
+                        showSuccess && (
+                            <div className="bg-green-50 border border-green-100 text-green-700 p-4 rounded-xl text-sm font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                                <Check size={18} /> Configuration saved successfully!
+                            </div>
+                        )
+                    }
 
-                {localConfig.categories.map(cat => {
-                    const catKpis = localConfig.kpis.filter(k => k.categoryId === cat.id);
-                    const totalKpiWeight = catKpis.reduce((sum, k) => sum + k.weight, 0);
+                    {
+                        !isValid && (
+                            <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl text-sm font-bold">
+                                ⚠️ Weights must sum to 100% for categories and KPIs within each category. Please adjust before saving.
+                            </div>
+                        )
+                    }
 
-                    return (
-                        <div key={cat.id} className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
-                            <div className="bg-slate-50 p-4 flex items-center gap-4 border-b border-slate-100">
-                                <div className="flex-1">
-                                    {editingId === cat.id ? (
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                autoFocus
-                                                className="input-field py-1 px-2 text-sm"
-                                                value={editValue}
-                                                onChange={e => setEditValue(e.target.value)}
-                                            />
-                                            <button onClick={() => saveEdit('category')} className="text-green-500"><Check size={18} /></button>
-                                            <button onClick={() => setEditingId(null)} className="text-slate-400"><X size={18} /></button>
+                    {/* Categories */}
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-slate-800">Pillars ({totalCatWeight}%)</h3>
+                            <button onClick={addCategory} className="text-sm font-bold text-keeta-primary hover:text-amber-400 flex items-center gap-1">
+                                <Plus size={16} /> Add Pillar
+                            </button>
+                        </div>
+
+                        {localConfig.categories.map(cat => {
+                            const catKpis = localConfig.kpis.filter(k => k.categoryId === cat.id);
+                            const totalKpiWeight = catKpis.reduce((sum, k) => sum + k.weight, 0);
+
+                            return (
+                                <div key={cat.id} className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
+                                    <div className="bg-slate-50 p-4 flex items-center gap-4 border-b border-slate-100">
+                                        <div className="flex-1">
+                                            {editingId === cat.id ? (
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        autoFocus
+                                                        className="input-field py-1 px-2 text-sm"
+                                                        value={editValue}
+                                                        onChange={e => setEditValue(e.target.value)}
+                                                    />
+                                                    <button onClick={() => saveEdit('category')} className="text-green-500"><Check size={18} /></button>
+                                                    <button onClick={() => setEditingId(null)} className="text-slate-400"><X size={18} /></button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center gap-2 group">
+                                                    <span className="font-bold text-slate-900">{cat.label}</span>
+                                                    <button onClick={() => startEdit(cat.id, cat.label)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-keeta-primary">
+                                                        <Edit2 size={14} />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
-                                    ) : (
-                                        <div className="flex items-center gap-2 group">
-                                            <span className="font-bold text-slate-900">{cat.label}</span>
-                                            <button onClick={() => startEdit(cat.id, cat.label)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-keeta-primary">
-                                                <Edit2 size={14} />
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-bold text-slate-400 uppercase">Weight</span>
+                                                <input
+                                                    type="number"
+                                                    className="w-16 input-field py-1 px-2 text-center font-bold"
+                                                    value={cat.weight}
+                                                    onChange={e => handleWeightChange(cat.id, Number(e.target.value), 'category')}
+                                                />
+                                                <span className="text-slate-400 font-bold">%</span>
+                                            </div>
+                                            <button onClick={() => deleteCategory(cat.id)} className="text-slate-300 hover:text-red-500 transition-colors">
+                                                <Trash2 size={18} />
                                             </button>
                                         </div>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-xs font-bold text-slate-400 uppercase">Weight</span>
-                                        <input
-                                            type="number"
-                                            className="w-16 input-field py-1 px-2 text-center font-bold"
-                                            value={cat.weight}
-                                            onChange={e => handleWeightChange(cat.id, Number(e.target.value), 'category')}
-                                        />
-                                        <span className="text-slate-400 font-bold">%</span>
                                     </div>
-                                    <button onClick={() => deleteCategory(cat.id)} className="text-slate-300 hover:text-red-500 transition-colors">
-                                        <Trash2 size={18} />
-                                    </button>
-                                </div>
-                            </div>
 
-                            <div className="p-4 space-y-3">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className={clsx("text-xs font-bold uppercase tracking-wider", totalKpiWeight === 100 ? "text-green-600" : "text-red-500")}>
-                                        KPI Weights: {totalKpiWeight}%
-                                    </span>
-                                    <button onClick={() => addKPI(cat.id)} className="text-xs font-bold text-slate-400 hover:text-keeta-primary flex items-center gap-1">
-                                        <Plus size={14} /> Add KPI
-                                    </button>
-                                </div>
-
-                                {catKpis.map(kpi => {
-                                    const enhancedKPI = kpi as EnhancedKPI;
-                                    const logicType = (enhancedKPI.scoringConfig?.type || enhancedKPI.scoringLogic || 'standard') as ScoringLogicType;
-                                    const logicMeta = SCORING_LOGIC_METADATA[logicType] || SCORING_LOGIC_METADATA['standard'];
-
-                                    return (
-                                        <div key={kpi.id} className="p-3 hover:bg-slate-50 rounded-lg transition-colors group border border-transparent hover:border-slate-100">
-                                            <div className="flex items-start gap-3 mb-2">
-                                                <div className="flex-1">
-                                                    {editingId === kpi.id ? (
-                                                        <div className="space-y-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <input
-                                                                    autoFocus
-                                                                    className="input-field py-1 px-2 text-sm w-full"
-                                                                    value={editValue}
-                                                                    onChange={e => setEditValue(e.target.value)}
-                                                                    placeholder="KPI Label"
-                                                                />
-                                                                <button onClick={() => saveEdit('kpi')} className="text-green-500 hover:bg-green-50 p-1 rounded"><Check size={16} /></button>
-                                                                <button onClick={() => setEditingId(null)} className="text-slate-400 hover:bg-slate-100 p-1 rounded"><X size={16} /></button>
-                                                            </div>
-                                                            <textarea
-                                                                className="input-field py-1 px-2 text-xs w-full resize-none"
-                                                                value={kpi.description || ''}
-                                                                onChange={e => {
-                                                                    const newDesc = e.target.value;
-                                                                    setLocalConfig(prev => ({
-                                                                        ...prev,
-                                                                        kpis: prev.kpis.map(k => k.id === kpi.id ? { ...k, description: newDesc } : k)
-                                                                    }));
-                                                                }}
-                                                                placeholder="KPI Description"
-                                                                rows={2}
-                                                            />
-                                                        </div>
-                                                    ) : (
-                                                        <div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-sm font-bold text-slate-700">{kpi.label}</span>
-                                                                <button onClick={() => startEdit(kpi.id, kpi.label)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-keeta-primary transition-opacity">
-                                                                    <Edit2 size={12} />
-                                                                </button>
-                                                            </div>
-                                                            <p className="text-xs text-slate-400 mt-1 line-clamp-2">{kpi.description || 'No description'}</p>
-
-                                                            {/* Scoring Logic Display */}
-                                                            <div className="mt-2 flex items-center gap-2">
-                                                                <span className="px-2 py-0.5 bg-keeta-primary/10 border border-keeta-primary/20 rounded text-xs font-bold text-keeta-primary">
-                                                                    {logicMeta.label}
-                                                                </span>
-                                                                <button
-                                                                    onClick={() => setConfiguringKPIId(kpi.id)}
-                                                                    className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-xs font-bold text-slate-600 flex items-center gap-1 transition-colors"
-                                                                >
-                                                                    <Sliders size={12} />
-                                                                    Configure
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-2 shrink-0">
-                                                    <input
-                                                        type="number"
-                                                        className="w-14 bg-slate-100 border-none rounded-md py-1 px-2 text-xs text-center font-bold focus:ring-2 focus:ring-keeta-primary"
-                                                        value={kpi.weight}
-                                                        onChange={e => handleWeightChange(kpi.id, Number(e.target.value), 'kpi')}
-                                                    />
-                                                    <span className="text-xs text-slate-400">%</span>
-                                                </div>
-                                                <button onClick={() => deleteKPI(kpi.id, cat.id)} className="text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
+                                    <div className="p-4 space-y-3">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className={clsx("text-xs font-bold uppercase tracking-wider", totalKpiWeight === 100 ? "text-green-600" : "text-red-500")}>
+                                                KPI Weights: {totalKpiWeight}%
+                                            </span>
+                                            <button onClick={() => addKPI(cat.id)} className="text-xs font-bold text-slate-400 hover:text-keeta-primary flex items-center gap-1">
+                                                <Plus size={14} /> Add KPI
+                                            </button>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
+
+                                        {catKpis.map(kpi => {
+                                            const enhancedKPI = kpi as EnhancedKPI;
+                                            const logicType = (enhancedKPI.scoringConfig?.type || enhancedKPI.scoringLogic || 'standard') as ScoringLogicType;
+                                            const logicMeta = SCORING_LOGIC_METADATA[logicType] || SCORING_LOGIC_METADATA['standard'];
+
+                                            return (
+                                                <div key={kpi.id} className="p-3 hover:bg-slate-50 rounded-lg transition-colors group border border-transparent hover:border-slate-100">
+                                                    <div className="flex items-start gap-3 mb-2">
+                                                        <div className="flex-1">
+                                                            {editingId === kpi.id ? (
+                                                                <div className="space-y-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <input
+                                                                            autoFocus
+                                                                            className="input-field py-1 px-2 text-sm w-full"
+                                                                            value={editValue}
+                                                                            onChange={e => setEditValue(e.target.value)}
+                                                                            placeholder="KPI Label"
+                                                                        />
+                                                                        <button onClick={() => saveEdit('kpi')} className="text-green-500 hover:bg-green-50 p-1 rounded"><Check size={16} /></button>
+                                                                        <button onClick={() => setEditingId(null)} className="text-slate-400 hover:bg-slate-100 p-1 rounded"><X size={16} /></button>
+                                                                    </div>
+                                                                    <textarea
+                                                                        className="input-field py-1 px-2 text-xs w-full resize-none"
+                                                                        value={kpi.description || ''}
+                                                                        onChange={e => {
+                                                                            const newDesc = e.target.value;
+                                                                            setLocalConfig(prev => ({
+                                                                                ...prev,
+                                                                                kpis: prev.kpis.map(k => k.id === kpi.id ? { ...k, description: newDesc } : k)
+                                                                            }));
+                                                                        }}
+                                                                        placeholder="KPI Description"
+                                                                        rows={2}
+                                                                    />
+                                                                </div>
+                                                            ) : (
+                                                                <div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-sm font-bold text-slate-700">{kpi.label}</span>
+                                                                        <button onClick={() => startEdit(kpi.id, kpi.label)} className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-keeta-primary transition-opacity">
+                                                                            <Edit2 size={12} />
+                                                                        </button>
+                                                                    </div>
+                                                                    <p className="text-xs text-slate-400 mt-1 line-clamp-2">{kpi.description || 'No description'}</p>
+
+                                                                    {/* Scoring Logic Display */}
+                                                                    <div className="mt-2 flex items-center gap-2">
+                                                                        <span className="px-2 py-0.5 bg-keeta-primary/10 border border-keeta-primary/20 rounded text-xs font-bold text-keeta-primary">
+                                                                            {logicMeta.label}
+                                                                        </span>
+                                                                        <button
+                                                                            onClick={() => setConfiguringKPIId(kpi.id)}
+                                                                            className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded text-xs font-bold text-slate-600 flex items-center gap-1 transition-colors"
+                                                                        >
+                                                                            <Sliders size={12} />
+                                                                            Configure
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            <input
+                                                                type="number"
+                                                                className="w-14 bg-slate-100 border-none rounded-md py-1 px-2 text-xs text-center font-bold focus:ring-2 focus:ring-keeta-primary"
+                                                                value={kpi.weight}
+                                                                onChange={e => handleWeightChange(kpi.id, Number(e.target.value), 'kpi')}
+                                                            />
+                                                            <span className="text-xs text-slate-400">%</span>
+                                                        </div>
+                                                        <button onClick={() => deleteKPI(kpi.id, cat.id)} className="text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </>
+            )}
 
             {/* KPI Configuration Modal */}
             {

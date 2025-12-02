@@ -157,14 +157,34 @@ export const VendorComparisonPanel: React.FC = () => {
                         const maxScore = vendorScores[0]?.score || 100;
                         const barWidth = vendorData.score ? (vendorData.score / maxScore) * 100 : 0;
 
+                        // Enhanced RAG background for cards
+                        const ragCardBg = vendorData.rag === 'green'
+                            ? 'bg-gradient-to-br from-green-50 to-green-100/40'
+                            : vendorData.rag === 'amber'
+                                ? 'bg-gradient-to-br from-amber-50 to-amber-100/40'
+                                : 'bg-gradient-to-br from-red-50 to-red-100/40';
+
                         return (
                             <div
                                 key={vendorData.vendor.id}
-                                className="group bg-slate-50 rounded-xl p-4 flex flex-col gap-2 shadow-md hover:shadow-xl transition-shadow cursor-pointer"
+                                className={clsx(
+                                    "group rounded-xl p-4 flex flex-col gap-2 shadow-md hover:shadow-xl transition-all cursor-pointer border-2",
+                                    ragCardBg,
+                                    vendorData.rag === 'green' ? 'border-green-200 hover:border-green-300' :
+                                        vendorData.rag === 'amber' ? 'border-amber-200 hover:border-amber-300' :
+                                            'border-red-200 hover:border-red-300'
+                                )}
                             >
                                 {/* Vendor Info */}
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3 flex-1 min-w-0">
+                                        {/* Vendor Color Indicator */}
+                                        {vendorData.vendor.color && (
+                                            <div
+                                                className="flex-shrink-0 w-1 h-8 rounded-full"
+                                                style={{ backgroundColor: vendorData.vendor.color }}
+                                            />
+                                        )}
                                         <span
                                             className={clsx(
                                                 "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold",
@@ -189,7 +209,7 @@ export const VendorComparisonPanel: React.FC = () => {
                                 </div>
 
                                 {/* Score Bar */}
-                                <div className="relative h-5 bg-slate-200 rounded-full overflow-hidden group-hover:scale-105 transition-transform duration-300">
+                                <div className="relative h-5 bg-white/50 rounded-full overflow-hidden group-hover:scale-105 transition-transform duration-300">
                                     <div
                                         className={clsx(
                                             "h-full rounded-full transition-all duration-1000 ease-out",
@@ -202,7 +222,7 @@ export const VendorComparisonPanel: React.FC = () => {
                                         style={{ width: `${barWidth}%` }}
                                     />
                                     {/* Hover overlay */}
-                                    <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs font-semibold text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="absolute right-3 top-1/2 transform -translate-y-1/2 text-xs font-semibold text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity">
                                         {Math.round(vendorData.score!)}%
                                     </span>
                                 </div>
@@ -222,24 +242,38 @@ export const VendorComparisonPanel: React.FC = () => {
                         const rank = idx + 1;
                         const scoreVsAvg = vendorData.score! - (stats?.avg || 0);
 
-                        // Determine background based on RAG
+                        // Enhanced RAG background with higher opacity
                         const ragBg = vendorData.rag === 'green'
-                            ? 'bg-green-100/20'
+                            ? 'bg-gradient-to-br from-green-50/70 via-green-100/50 to-green-50/30'
                             : vendorData.rag === 'amber'
-                                ? 'bg-amber-100/20'
-                                : 'bg-red-100/20';
+                                ? 'bg-gradient-to-br from-amber-50/70 via-amber-100/50 to-amber-50/30'
+                                : 'bg-gradient-to-br from-red-50/70 via-red-100/50 to-red-50/30';
+
+                        const borderColor = vendorData.rag === 'green'
+                            ? 'border-green-300'
+                            : vendorData.rag === 'amber'
+                                ? 'border-amber-300'
+                                : 'border-red-300';
 
                         return (
                             <div
                                 key={vendorData.vendor.id}
                                 className={clsx(
-                                    "border-2 rounded-2xl p-5 transition-all hover:shadow-lg",
+                                    "border-2 rounded-2xl p-5 transition-all hover:shadow-lg relative overflow-hidden",
                                     ragBg,
-                                    rank <= 3 ? getRankColor(rank) : 'border-slate-200 hover:border-keeta-primary'
+                                    rank <= 3 ? getRankColor(rank) : borderColor
                                 )}
                             >
                                 <div className="flex items-center justify-between mb-4">
                                     <div className="flex items-center gap-4">
+                                        {/* Vendor Color Bar */}
+                                        {vendorData.vendor.color && (
+                                            <div
+                                                className="w-1.5 h-16 rounded-full absolute left-0 top-1/2 transform -translate-y-1/2"
+                                                style={{ backgroundColor: vendorData.vendor.color }}
+                                            />
+                                        )}
+
                                         {/* Rank Badge */}
                                         <div className={clsx(
                                             "w-12 h-12 rounded-full flex items-center justify-center text-2xl font-black border-2",
@@ -292,12 +326,12 @@ export const VendorComparisonPanel: React.FC = () => {
                                         const catScore = vendorData.categoryScores?.[category.id];
                                         const score = catScore?.score || 0;
 
-                                        // Category RAG background
+                                        // Enhanced category RAG background
                                         const catBg = score >= 90
-                                            ? 'bg-green-100/20'
+                                            ? 'bg-green-100/60 border border-green-200'
                                             : score >= 80
-                                                ? 'bg-amber-100/20'
-                                                : 'bg-red-100/20';
+                                                ? 'bg-amber-100/60 border border-amber-200'
+                                                : 'bg-red-100/60 border border-red-200';
 
                                         return (
                                             <div key={category.id} className={clsx("rounded-lg p-3", catBg)}>

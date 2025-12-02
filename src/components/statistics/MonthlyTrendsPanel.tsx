@@ -150,21 +150,33 @@ export const MonthlyTrendsPanel: React.FC = () => {
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                             <defs>
-                                <linearGradient id="colorMain" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#00E599" stopOpacity={0.1} />
-                                    <stop offset="95%" stopColor="#00E599" stopOpacity={0} />
-                                </linearGradient>
-                                <linearGradient id="colorCompare" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.1} />
-                                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                                </linearGradient>
+                                {/* Dynamic gradients using vendor colors */}
+                                {selectedVendorId && (() => {
+                                    const vendor = vendors.find(v => v.id === selectedVendorId);
+                                    const color = vendor?.color || '#FFD700'; // Default to yellow
+                                    return (
+                                        <linearGradient id="colorMain" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                                            <stop offset="95%" stopColor={color} stopOpacity={0} />
+                                        </linearGradient>
+                                    );
+                                })()}
+                                {compareVendorId !== 'none' && compareVendorId !== 'all' && (() => {
+                                    const vendor = vendors.find(v => v.id === compareVendorId);
+                                    const color = vendor?.color || '#FFD700'; // Default to yellow
+                                    return (
+                                        <linearGradient id="colorCompare" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
+                                            <stop offset="95%" stopColor={color} stopOpacity={0} />
+                                        </linearGradient>
+                                    );
+                                })()}
                                 {/* Dynamic gradients for all vendors */}
-                                {compareVendorId === 'all' && vendors.map((v, idx) => {
-                                    const colors = ['#00E599', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
-                                    const color = colors[idx % colors.length];
+                                {compareVendorId === 'all' && vendors.map((v) => {
+                                    const color = v.color || '#FFD700'; // Default to yellow
                                     return (
                                         <linearGradient key={v.id} id={`color${v.id}`} x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor={color} stopOpacity={0.1} />
+                                            <stop offset="5%" stopColor={color} stopOpacity={0.3} />
                                             <stop offset="95%" stopColor={color} stopOpacity={0} />
                                         </linearGradient>
                                     );
@@ -191,10 +203,9 @@ export const MonthlyTrendsPanel: React.FC = () => {
                             <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
 
                             {compareVendorId === 'all' ? (
-                                // Render all vendors
-                                vendors.map((v, idx) => {
-                                    const colors = ['#00E599', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
-                                    const color = colors[idx % colors.length];
+                                // Render all vendors with their custom colors
+                                vendors.map((v) => {
+                                    const color = v.color || '#FFD700'; // Default to yellow
                                     return (
                                         <Area
                                             key={v.id}
@@ -210,13 +221,13 @@ export const MonthlyTrendsPanel: React.FC = () => {
                                     );
                                 })
                             ) : (
-                                // Render single or comparison mode
+                                // Render single or comparison mode with vendor colors
                                 <>
                                     <Area
                                         type="monotone"
                                         dataKey={selectedVendorId}
                                         name={selectedVendor?.name}
-                                        stroke="#00E599"
+                                        stroke={selectedVendor?.color || '#FFD700'}
                                         strokeWidth={3}
                                         fillOpacity={1}
                                         fill="url(#colorMain)"
@@ -228,7 +239,7 @@ export const MonthlyTrendsPanel: React.FC = () => {
                                             type="monotone"
                                             dataKey={compareVendorId}
                                             name={compareVendor?.name}
-                                            stroke="#3B82F6"
+                                            stroke={compareVendor?.color || '#FFD700'}
                                             strokeWidth={3}
                                             fillOpacity={1}
                                             fill="url(#colorCompare)"

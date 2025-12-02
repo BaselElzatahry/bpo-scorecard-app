@@ -86,6 +86,13 @@ export const VendorSelector: React.FC<VendorSelectorProps> = ({
                                 : "bg-white text-slate-500 border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                         )}
                     >
+                        {/* Vendor Color Indicator */}
+                        {vendor.color && (
+                            <div
+                                className="w-3 h-3 rounded-full border-2 border-white shadow-sm"
+                                style={{ backgroundColor: vendor.color }}
+                            />
+                        )}
                         {vendor.logo ? (
                             <img src={vendor.logo} alt={vendor.name} className="w-4 h-4 rounded-full object-cover" />
                         ) : (

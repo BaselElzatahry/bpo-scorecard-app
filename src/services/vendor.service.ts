@@ -188,7 +188,7 @@ class VendorService {
 
     /**
      * Check if vendor has any audits
-     * Returns count of audits associated with this vendor
+     * Returns count of audit periods (not individual KPI entries) associated with this vendor
      */
     getVendorAuditCount(vendorId: string): number {
         try {
@@ -198,9 +198,10 @@ class VendorService {
             const audits = JSON.parse(auditsJson);
             let count = 0;
 
+            // Count the number of audit periods (keys), not the number of KPI entries
             Object.keys(audits).forEach(key => {
                 if (key.startsWith(vendorId + '-')) {
-                    count += audits[key].length;
+                    count++; // Each key represents one audit period
                 }
             });
 
