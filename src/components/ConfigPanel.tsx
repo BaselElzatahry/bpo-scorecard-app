@@ -7,9 +7,10 @@ import clsx from 'clsx';
 import { EnhancedKPI, SCORING_LOGIC_METADATA, ScoringLogicType } from '../types/config.types';
 import { KPIConfigModal } from './config/KPIConfigModal';
 import { VendorManagementPanel } from './VendorManagementPanel';
+import { DEFAULT_CONFIG } from '../data/defaults';
 
 export const ConfigPanel: React.FC = () => {
-    const { config, saveConfig, resetConfig } = useApp();
+    const { config, saveConfig, vendors, removeVendor } = useApp();
     const [searchParams] = useSearchParams();
     const [localConfig, setLocalConfig] = useState(config);
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -48,6 +49,33 @@ export const ConfigPanel: React.FC = () => {
         saveConfig(localConfig);
         setShowSuccess(true);
         setTimeout(() => setShowSuccess(false), 3000);
+    };
+
+    const handleReset = () => {
+        if (activeTab === 'vendors') {
+            // Reset vendors only
+            if (confirm('Are you sure you want to remove all vendors? This will delete all vendor data but preserve your audit history.')) {
+                // Remove all vendors
+                vendors.forEach(vendor => {
+                    removeVendor(vendor.id);
+                });
+                setShowSuccess(false);
+                alert('All vendors have been removed. The page will reload.');
+                window.location.reload();
+            }
+        } else {
+            // Reset pillars & KPIs only
+            if (confirm('Are you sure you want to reset Pillars & KPIs to default configuration? This will restore the original categories and KPIs but keep your vendors.')) {
+                // Get default config
+                const defaultConfig = { categories: DEFAULT_CONFIG.categories, kpis: DEFAULT_CONFIG.kpis };
+                // Update local config with defaults
+                setLocalConfig({ ...localConfig, ...defaultConfig });
+                // Save to persist
+                saveConfig({ ...config, ...defaultConfig });
+                setShowSuccess(true);
+                setTimeout(() => setShowSuccess(false), 3000);
+            }
+        }
     };
 
     const handleExport = () => {
@@ -214,7 +242,7 @@ export const ConfigPanel: React.FC = () => {
                         Export
                     </button>
                     <button
-                        onClick={resetConfig}
+                        onClick={handleReset}
                         className="px-4 py-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors font-bold flex items-center gap-2 border-2 border-red-200"
                     >
                         <RotateCcw size={18} />

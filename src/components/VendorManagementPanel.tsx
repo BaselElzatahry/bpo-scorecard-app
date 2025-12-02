@@ -3,6 +3,8 @@ import { useApp } from '../context/AppContext';
 import { Plus, Edit2, Trash2, Check, X, Building2, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { ConfirmDialog } from './shared/ConfirmDialog';
+import { ColorPicker } from './shared/ColorPicker';
+import { LogoUpload } from './shared/LogoUpload';
 import { vendorService } from '../services/vendor.service';
 
 export const VendorManagementPanel: React.FC = () => {
@@ -12,11 +14,13 @@ export const VendorManagementPanel: React.FC = () => {
     const [editValue, setEditValue] = useState('');
     const [editColor, setEditColor] = useState('');
     const [editRegion, setEditRegion] = useState('');
+    const [editLogo, setEditLogo] = useState<string | undefined>(undefined);
 
     const [isAdding, setIsAdding] = useState(false);
     const [newVendorName, setNewVendorName] = useState('');
     const [newVendorColor, setNewVendorColor] = useState('#FFD700');
     const [newVendorRegion, setNewVendorRegion] = useState('');
+    const [newVendorLogo, setNewVendorLogo] = useState<string | undefined>(undefined);
 
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
@@ -50,7 +54,8 @@ export const VendorManagementPanel: React.FC = () => {
         try {
             addVendor(newVendorName.trim(), {
                 color: newVendorColor,
-                region: newVendorRegion.trim() || undefined
+                region: newVendorRegion.trim() || undefined,
+                logo: newVendorLogo
             });
 
             showSuccess(`Vendor "${newVendorName}" added successfully!`);
@@ -59,18 +64,20 @@ export const VendorManagementPanel: React.FC = () => {
             setNewVendorName('');
             setNewVendorColor('#FFD700');
             setNewVendorRegion('');
+            setNewVendorLogo(undefined);
             setIsAdding(false);
         } catch (err: any) {
             showError(err.message || 'Failed to add vendor');
         }
-    }, [newVendorName, newVendorColor, newVendorRegion, addVendor, showSuccess, showError]);
+    }, [newVendorName, newVendorColor, newVendorRegion, newVendorLogo, addVendor, showSuccess, showError]);
 
     // Start editing vendor
-    const startEdit = useCallback((vendorId: string, currentName: string, currentColor?: string, currentRegion?: string) => {
+    const startEdit = useCallback((vendorId: string, currentName: string, currentColor?: string, currentRegion?: string, currentLogo?: string) => {
         setEditingId(vendorId);
         setEditValue(currentName);
         setEditColor(currentColor || '#FFD700');
         setEditRegion(currentRegion || '');
+        setEditLogo(currentLogo);
     }, []);
 
     // Save vendor edit
@@ -84,7 +91,8 @@ export const VendorManagementPanel: React.FC = () => {
             updateVendor(editingId!, {
                 name: editValue.trim(),
                 color: editColor,
-                region: editRegion.trim() || undefined
+                region: editRegion.trim() || undefined,
+                logo: editLogo
             });
 
             showSuccess('Vendor updated successfully!');
@@ -92,7 +100,7 @@ export const VendorManagementPanel: React.FC = () => {
         } catch (err: any) {
             showError(err.message || 'Failed to update vendor');
         }
-    }, [editingId, editValue, editColor, editRegion, updateVendor, showSuccess, showError]);
+    }, [editingId, editValue, editColor, editRegion, editLogo, updateVendor, showSuccess, showError]);
 
     // Cancel editing
     const cancelEdit = useCallback(() => {
@@ -100,6 +108,7 @@ export const VendorManagementPanel: React.FC = () => {
         setEditValue('');
         setEditColor('');
         setEditRegion('');
+        setEditLogo(undefined);
     }, []);
 
     // Initiate delete vendor
@@ -173,7 +182,7 @@ export const VendorManagementPanel: React.FC = () => {
                         New Vendor
                     </h4>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">
                                 Vendor Name *
@@ -202,25 +211,17 @@ export const VendorManagementPanel: React.FC = () => {
                             />
                         </div>
 
-                        <div>
-                            <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">
-                                Color
-                            </label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="color"
-                                    className="h-10 w-16 rounded-lg border-2 border-slate-200 cursor-pointer"
-                                    value={newVendorColor}
-                                    onChange={(e) => setNewVendorColor(e.target.value)}
-                                />
-                                <input
-                                    type="text"
-                                    className="input-field flex-1"
-                                    value={newVendorColor}
-                                    onChange={(e) => setNewVendorColor(e.target.value)}
-                                />
-                            </div>
-                        </div>
+                        <ColorPicker
+                            value={newVendorColor}
+                            onChange={setNewVendorColor}
+                            label="Vendor Color"
+                        />
+
+                        <LogoUpload
+                            currentLogo={newVendorLogo}
+                            onLogoChange={setNewVendorLogo}
+                            vendorName={newVendorName || 'New Vendor'}
+                        />
                     </div>
 
                     <div className="flex gap-3 pt-2">
@@ -290,20 +291,18 @@ export const VendorManagementPanel: React.FC = () => {
                                                 value={editRegion}
                                                 onChange={(e) => setEditRegion(e.target.value)}
                                             />
-                                            <div className="flex gap-2 items-center">
-                                                <input
-                                                    type="color"
-                                                    className="h-8 w-12 rounded border-2 border-slate-200 cursor-pointer"
-                                                    value={editColor}
-                                                    onChange={(e) => setEditColor(e.target.value)}
-                                                />
-                                                <input
-                                                    type="text"
-                                                    className="input-field flex-1 text-xs"
-                                                    value={editColor}
-                                                    onChange={(e) => setEditColor(e.target.value)}
-                                                />
-                                            </div>
+
+                                            <ColorPicker
+                                                value={editColor}
+                                                onChange={setEditColor}
+                                            />
+
+                                            <LogoUpload
+                                                currentLogo={editLogo}
+                                                onLogoChange={setEditLogo}
+                                                vendorName={editValue}
+                                            />
+
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={saveEdit}
@@ -324,17 +323,31 @@ export const VendorManagementPanel: React.FC = () => {
                                     ) : (
                                         <>
                                             <div className="flex items-start justify-between mb-3">
-                                                <div className="flex-1">
-                                                    <h4 className="font-bold text-slate-900 mb-1 line-clamp-1">
-                                                        {vendor.name}
-                                                    </h4>
-                                                    {vendor.region && (
-                                                        <p className="text-xs text-slate-500">{vendor.region}</p>
+                                                <div className="flex items-center gap-3 flex-1">
+                                                    {/* Vendor Logo */}
+                                                    {vendor.logo ? (
+                                                        <img
+                                                            src={vendor.logo}
+                                                            alt={vendor.name}
+                                                            className="w-10 h-10 rounded-lg object-cover border-2 border-slate-200"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                                                            <Building2 size={20} className="text-slate-400" />
+                                                        </div>
                                                     )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className="font-bold text-slate-900 mb-1 line-clamp-1">
+                                                            {vendor.name}
+                                                        </h4>
+                                                        {vendor.region && (
+                                                            <p className="text-xs text-slate-500">{vendor.region}</p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
-                                                        onClick={() => startEdit(vendor.id, vendor.name, vendor.color, vendor.region)}
+                                                        onClick={() => startEdit(vendor.id, vendor.name, vendor.color, vendor.region, vendor.logo)}
                                                         className="p-1.5 text-slate-400 hover:text-keeta-primary hover:bg-slate-50 rounded transition-colors"
                                                         title="Edit vendor"
                                                     >
