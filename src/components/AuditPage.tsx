@@ -375,8 +375,17 @@ export const AuditPage: React.FC = () => {
 
         categoryKpis.forEach(kpi => {
             const entry = getAuditEntry(kpi.id);
-            const percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-            const score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+            let score: number;
+
+            if (kpi.id === '1.3') {
+                // Special handling for attrition rate: Binary scoring based on threshold
+                const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                score = attritionRate <= 15 ? 100 : 0;
+            } else {
+                const percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+            }
+
             totalWeight += kpi.weight;
             weightedScore += score * kpi.weight;
         });
@@ -392,8 +401,16 @@ export const AuditPage: React.FC = () => {
                 const entry = getAuditEntry(kpi.id);
 
                 // Calculate individual KPI score
-                const percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                const kpiScore = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                let kpiScore: number;
+
+                if (kpi.id === '1.3') {
+                    // Special handling for attrition rate
+                    const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                    kpiScore = attritionRate <= 15 ? 100 : 0;
+                } else {
+                    const percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                    kpiScore = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                }
 
                 // If this KPI scored < 100% and has no comment, flag it
                 if (kpiScore < 100 && !entry.commentsForMissed?.trim()) {
@@ -555,11 +572,20 @@ export const AuditPage: React.FC = () => {
             <div className="space-y-4">
                 {categoryKpis.map((kpi, index) => {
                     const entry = getAuditEntry(kpi.id);
-                    // Calculate percentage first, then get compliance score
-                    const percentage = entry.auditsDone > 0
-                        ? (entry.auditsMet / entry.auditsDone) * 100
-                        : 0;
-                    const score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+
+                    // Calculate score with special handling for attrition rate
+                    let score: number;
+                    let percentage: number;
+
+                    if (kpi.id === '1.3') {
+                        // Special handling for attrition rate
+                        const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                        score = attritionRate <= 15 ? 100 : 0;
+                        percentage = attritionRate;
+                    } else {
+                        percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                        score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                    }
                     const rag = getRagColor(score);
 
                     let isFailure = false;

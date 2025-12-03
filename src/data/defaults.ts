@@ -34,8 +34,8 @@ export const DEFAULT_KPIS: KPI[] = [
         categoryId: 'trainingDelivery',
         label: '1.3 Attrition Rate',
         weight: 25,
-        description: 'Attrition rate = Agents dropped before certification / Total agents who started the training phase. Vendor passes when attrition rate < 15%.',
-        scoringLogic: 'inverse',
+        description: 'Attrition rate = Total dropped / Total agents who started training. Score is 100 if attrition rate ≤ 15%, otherwise 0.',
+        scoringLogic: 'binary',
         labels: { done: 'Total Started Training', met: 'Total Dropped' }
     },
     {

@@ -2,6 +2,7 @@ import React from 'react';
 import { createBrowserRouter, RouterProvider, Navigate, useParams } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import { AppLayout } from './components/AppLayout';
 import { SummaryScorecard } from './components/SummaryScorecard';
 import { AuditPage } from './components/AuditPage';
@@ -28,86 +29,84 @@ const AuditPageWrapper: React.FC = () => {
     return <AuditPage key={categoryId} />;
 };
 
-const router = createBrowserRouter([
-    {
-        path: "/login",
-        element: <LoginPage />
-    },
-    {
-        path: "/",
-        element: (
-            <ProtectedRoute>
-                <AppLayout />
-            </ProtectedRoute>
-        ),
-        children: [
-            {
-                index: true,
-                element: <SummaryScorecard />
-            },
-            {
-                path: "statistics",
-                element: <StatisticsPage />
-            },
-            {
-                path: "comparison",
-                element: <Navigate to="/statistics?tab=vendor-comparison" replace />
-            },
-            {
-                path: "trends",
-                element: <Navigate to="/statistics?tab=monthly-trends" replace />
-            },
-            {
-                path: "simulator",
-                element: <ScoreSimulator />
-            },
-            {
-                path: "reports",
-                element: <ReportsPage />
-            },
-            {
-                path: "new-audit",
-                element: <NewAuditPage />
-            },
-            {
-                path: "audits/details/:vendorId/:period",
-                element: <AuditDetailsPage />
-            },
-            {
-                path: "appeals",
-                element: <AppealsPage />
-            },
-            {
-                path: "audit/:categoryId",
-                element: <AuditPageWrapper />
-            },
-            {
-                path: "config",
-                element: (
-                    <ProtectedRoute requireAdmin>
-                        <ConfigPanel />
-                    </ProtectedRoute>
-                )
-            },
-            {
-                path: "users",
-                element: (
-                    <ProtectedRoute requireAdmin>
-                        <UserManagement />
-                    </ProtectedRoute>
-                )
-            },
-            {
-                path: "*",
-                element: <Navigate to="/" replace />
-            }
-        ]
-    }
-]);
-
-import { ToastProvider } from './context/ToastContext';
-
 const App: React.FC = () => {
+    const router = createBrowserRouter([
+        {
+            path: "/login",
+            element: <LoginPage />
+        },
+        {
+            path: "/",
+            element: (
+                <ProtectedRoute>
+                    <AppLayout />
+                </ProtectedRoute>
+            ),
+            children: [
+                {
+                    index: true,
+                    element: <SummaryScorecard />
+                },
+                {
+                    path: "statistics",
+                    element: <StatisticsPage />
+                },
+                {
+                    path: "comparison",
+                    element: <Navigate to="/statistics?tab=vendor-comparison" replace />
+                },
+                {
+                    path: "trends",
+                    element: <Navigate to="/statistics?tab=monthly-trends" replace />
+                },
+                {
+                    path: "simulator",
+                    element: <ScoreSimulator />
+                },
+                {
+                    path: "reports",
+                    element: <ReportsPage />
+                },
+                {
+                    path: "new-audit",
+                    element: <NewAuditPage />
+                },
+                {
+                    path: "audits/details/:vendorId/:period",
+                    element: <AuditDetailsPage />
+                },
+                {
+                    path: "appeals",
+                    element: <AppealsPage />
+                },
+                {
+                    path: "audit/:categoryId",
+                    element: <AuditPageWrapper />
+                },
+                {
+                    path: "config",
+                    element: (
+                        <ProtectedRoute requireAdmin>
+                            <ConfigPanel />
+                        </ProtectedRoute>
+                    )
+                },
+                {
+                    path: "users",
+                    element: (
+                        <ProtectedRoute requireAdmin>
+                            <UserManagement />
+                        </ProtectedRoute>
+                    )
+                },
+                {
+                    path: "*",
+                    element: <Navigate to="/" replace />
+                }
+            ]
+        }
+    ]);
+
     return (
         <AuthProvider>
             <ToastProvider>

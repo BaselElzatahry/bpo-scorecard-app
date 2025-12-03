@@ -218,12 +218,24 @@ export function calculateScores(
 
             if (audit && audit.auditsDone > 0) {
                 // Calculate percentage first
-                const percentage = audit.auditsDone > 0
-                    ? (audit.auditsMet / audit.auditsDone) * 100
-                    : 0;
+                // Special handling for attrition rate KPI (1.3)
+                let percentage: number;
+                let score: number;
 
-                // Then get compliance score
-                const score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                if (kpi.id === '1.3') {
+                    // Attrition rate: Total Dropped / Total Started
+                    const attritionRate = (audit.auditsMet / audit.auditsDone) * 100;
+                    // Binary scoring: 100 if attrition ≤ 15%, 0 otherwise
+                    score = attritionRate <= 15 ? 100 : 0;
+                    percentage = attritionRate;
+                } else {
+                    // Standard calculation for all other KPIs
+                    percentage = audit.auditsDone > 0
+                        ? (audit.auditsMet / audit.auditsDone) * 100
+                        : 0;
+                    // Get compliance score using the configured scoring logic
+                    score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                }
 
                 kpiScores[kpi.id] = {
                     score: score,
