@@ -26,6 +26,7 @@ export const KPIConfigModal: React.FC<Props> = ({ kpi, onSave, onCancel }) => {
     function updateScoringLogic(type: ScoringLogicType) {
         setWorkingKPI({
             ...workingKPI,
+            scoringLogic: type, // CRITICAL: Update legacy field too!
             scoringConfig: {
                 ...scoringConfig,
                 type,
@@ -38,12 +39,14 @@ export const KPIConfigModal: React.FC<Props> = ({ kpi, onSave, onCancel }) => {
     }
 
     function updateScoringConfig(updates: Partial<ScoringLogicConfig>) {
+        const newConfig = {
+            ...scoringConfig,
+            ...updates
+        };
         setWorkingKPI({
             ...workingKPI,
-            scoringConfig: {
-                ...scoringConfig,
-                ...updates
-            }
+            scoringLogic: newConfig.type, // Keep legacy field in sync
+            scoringConfig: newConfig
         });
     }
 

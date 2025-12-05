@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { ConfirmationModal } from './ConfirmationModal';
 import { ValidationSummaryModal } from './ValidationSummaryModal';
+import { ScorecardSelectionModal } from './ScorecardSelectionModal';
 import { calculateComplianceScore, getRagColor } from '../utils/scoring';
 import { validateScore, validateImageUpload, validateAuditCompletion, ValidationError } from '../utils/validation';
 import { v4 as uuidv4 } from 'uuid';
@@ -25,6 +26,7 @@ export const AuditPage: React.FC = () => {
     const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
     const [validationWarnings, setValidationWarnings] = React.useState<ValidationError[]>([]);
     const [fieldErrors, setFieldErrors] = React.useState<Record<string, Record<string, string>>>({});
+    const [showScorecardModal, setShowScorecardModal] = React.useState(false);
 
     // Undo/Redo State
     const [history, setHistory] = React.useState<any[][]>([]);
@@ -146,37 +148,49 @@ export const AuditPage: React.FC = () => {
         }, 800);
     };
 
-    const category = config.categories.find(c => c.id === categoryId);
-    const categoryKpis = config.kpis.filter(k => k.categoryId === categoryId);
+    // Load scorecard configuration for this audit (dynamic)
+    const scorecardConfig = config;
+
+    const category = scorecardConfig.categories.find(c => c.id === categoryId);
+    const categoryKpis = scorecardConfig.kpis.filter(k => k.categoryId === categoryId);
 
     const isAuditStarted = startedAudits[`${currentVendorId}-${currentPeriod}`];
 
     // Calculate scores for the header
     const scores = calculateScore(currentVendorId, currentPeriod);
-    const categoryScore = scores.categoryScores[categoryId || ''] || { score: 0, rag: 'red' };
+    const categoryScore = scores?.categoryScores[categoryId || ''] || { score: 0, rag: 'red' };
 
     if (!category) return <div>Category not found</div>;
 
     if (!isAuditStarted) {
         return (
-            <div className="flex flex-col items-center justify-center h-[60vh] animate-in fade-in">
-                <div className="bg-slate-100 p-8 rounded-full mb-6">
-                    <Lock size={48} className="text-slate-400" />
+            <>
+                <div className="flex flex-col items-center justify-center h-[60vh] animate-in fade-in">
+                    <div className="bg-slate-100 p-8 rounded-full mb-6">
+                        <Lock size={48} className="text-slate-400" />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-900 mb-2">Audit Not Started</h2>
+                    <p className="text-slate-500 mb-8 text-center max-w-md">
+                        You haven't started an audit for this vendor and period yet.
+                        Please start the audit to begin scoring.
+                    </p>
+                    <button
+                        onClick={() => setShowScorecardModal(true)}
+                        className="btn-primary py-3 px-8 flex items-center gap-2"
+                    >
+                        Start Audit
+                    </button>
                 </div>
-                <h2 className="text-2xl font-black text-slate-900 mb-2">Audit Not Started</h2>
-                <p className="text-slate-500 mb-8 text-center max-w-md">
-                    You haven't started an audit for this vendor and period yet.
-                    Please start the audit to begin scoring.
-                </p>
-                <button
-                    onClick={() => {
-                        startAudit(currentVendorId, currentPeriod);
+
+                <ScorecardSelectionModal
+                    isOpen={showScorecardModal}
+                    onClose={() => setShowScorecardModal(false)}
+                    onSelect={(configId) => {
+                        startAudit(currentVendorId, currentPeriod, configId);
+                        setShowScorecardModal(false);
                     }}
-                    className="btn-primary py-3 px-8 flex items-center gap-2"
-                >
-                    Start Audit
-                </button>
-            </div>
+                />
+            </>
         );
     }
 
@@ -378,12 +392,26 @@ export const AuditPage: React.FC = () => {
             let score: number;
 
             if (kpi.id === '1.3') {
-                // Special handling for attrition rate: Binary scoring based on threshold
-                const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                score = attritionRate <= 15 ? 100 : 0;
+                // Special handling for attrition rate KPI
+                // For attrition: met = Total Dropped, done = Total Started
+                // Attrition Rate = (Total Dropped / Total Started) * 100
+                // If attrition rate ≤ 15% → PASS (score 100)
+                // If attrition rate > 15% → FAIL (score 0)
+                // BUT if binary input is used (Pass/Fail buttons):
+                // entry.auditsMet will be 1 for PASS button, 0 for FAIL button
+                // So we use binary logic directly
+                if (entry.auditsDone === 1) {
+                    // Binary input mode (Pass/Fail buttons)
+                    // auditsMet = 1 means PASS, auditsMet = 0 means FAIL
+                    score = entry.auditsMet === 1 ? 100 : 0;
+                } else {
+                    // Numeric input mode (actual counts)
+                    const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                    score = attritionRate <= 15 ? 100 : 0;
+                }
             } else {
                 const percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                score = calculateComplianceScore(percentage, kpi); // Pass full KPI object
             }
 
             totalWeight += kpi.weight;
@@ -405,11 +433,17 @@ export const AuditPage: React.FC = () => {
 
                 if (kpi.id === '1.3') {
                     // Special handling for attrition rate
-                    const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                    kpiScore = attritionRate <= 15 ? 100 : 0;
+                    if (entry.auditsDone === 1) {
+                        // Binary input mode
+                        kpiScore = entry.auditsMet === 1 ? 100 : 0;
+                    } else {
+                        // Numeric input mode
+                        const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                        kpiScore = attritionRate <= 15 ? 100 : 0;
+                    }
                 } else {
                     const percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                    kpiScore = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                    kpiScore = calculateComplianceScore(percentage, kpi); // Pass full KPI object
                 }
 
                 // If this KPI scored < 100% and has no comment, flag it
@@ -579,12 +613,19 @@ export const AuditPage: React.FC = () => {
 
                     if (kpi.id === '1.3') {
                         // Special handling for attrition rate
-                        const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                        score = attritionRate <= 15 ? 100 : 0;
-                        percentage = attritionRate;
+                        if (entry.auditsDone === 1) {
+                            // Binary input mode
+                            score = entry.auditsMet === 1 ? 100 : 0;
+                            percentage = entry.auditsMet === 1 ? 0 : 100; // For display
+                        } else {
+                            // Numeric input mode
+                            const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                            score = attritionRate <= 15 ? 100 : 0;
+                            percentage = attritionRate;
+                        }
                     } else {
                         percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                        score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                        score = calculateComplianceScore(percentage, kpi); // Pass full KPI object
                     }
                     const rag = getRagColor(score);
 

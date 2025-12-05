@@ -223,11 +223,25 @@ export function calculateScores(
                 let score: number;
 
                 if (kpi.id === '1.3') {
-                    // Attrition rate: Total Dropped / Total Started
-                    const attritionRate = (audit.auditsMet / audit.auditsDone) * 100;
-                    // Binary scoring: 100 if attrition ≤ 15%, 0 otherwise
-                    score = attritionRate <= 15 ? 100 : 0;
-                    percentage = attritionRate;
+                    // CRITICAL FIX: Attrition Rate can have two input modes:
+                    // 1. Binary mode (Pass/Fail buttons): auditsDone=1, auditsMet=0 or 1
+                    // 2. Numeric mode: actual counts of total started and total dropped
+
+                    const isBinaryInput = audit.auditsDone === 1 && (audit.auditsMet === 0 || audit.auditsMet === 1);
+
+                    if (isBinaryInput) {
+                        // Binary Pass/Fail button input
+                        // auditsMet=1 means Pass (attrition ≤ 15%) → score 100
+                        // auditsMet=0 means Fail (attrition > 15%) → score 0
+                        score = audit.auditsMet === 1 ? 100 : 0;
+                        percentage = audit.auditsMet === 1 ? 10 : 20; // Representative values for display
+                    } else {
+                        // Numeric input mode: auditsMet = Total Dropped, auditsDone = Total Started
+                        const attritionRate = (audit.auditsMet / audit.auditsDone) * 100;
+                        // Binary scoring: 100 if attrition ≤ 15%, 0 otherwise
+                        score = attritionRate <= 15 ? 100 : 0;
+                        percentage = attritionRate;
+                    }
                 } else {
                     // Standard calculation for all other KPIs
                     percentage = audit.auditsDone > 0

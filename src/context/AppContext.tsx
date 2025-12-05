@@ -4,12 +4,14 @@ import { DEFAULT_CONFIG, DEFAULT_VENDORS } from '../data/defaults';
 import { calculateScores } from '../utils/scoring';
 import { indexedDBService } from '../services/indexedDB.service';
 import { vendorService } from '../services/vendor.service';
+import { scorecardConfigService } from '../services/scorecard-config.service';
 
 interface AppState {
     vendors: Vendor[];
     categories: Category[];
     kpis: KPI[];
     config: AppConfig;
+    reloadConfig: () => void;  // NEW: Reload config from active scorecard
     audits: Record<string, AuditEntry[]>;
     startedAudits: Record<string, boolean>; // Key: vendorId-period
     editingAudits: Record<string, boolean>; // Key: vendorId-period
@@ -49,8 +51,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const [config, setConfig] = useState<AppConfig>(() => {
         try {
-            const saved = localStorage.getItem('appConfig');
-            return saved ? JSON.parse(saved) : DEFAULT_CONFIG;
+            // CRITICAL FIX: Load from active scorecard configuration instead of defaults
+            const activeConfigs = scorecardConfigService.getActiveConfigs();
+
+            if (activeConfigs.length > 0) {
+                // Use the first active scorecard configuration
+                const activeConfig = activeConfigs[0];
+                console.log(`✅ Loaded active scorecard: ${activeConfig.name}`);
+                return {
+                    categories: activeConfig.categories,
+                    kpis: activeConfig.kpis
+                };
+            }
+
+            // Fallback to defaults if no saved configs
+            console.log('⚠️ No active scorecard found, using defaults');
+            return DEFAULT_CONFIG;
         } catch (e) {
             console.error('Failed to load config', e);
             return DEFAULT_CONFIG;
@@ -149,6 +165,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const setVendor = useCallback((id: string) => setCurrentVendorId(id), []);
     const setVendorId = useCallback((id: string) => setCurrentVendorId(id), []);
     const setPeriod = useCallback((period: string) => setCurrentPeriod(period), []);
+
+    // CRITICAL FIX: Reload config from active scorecard
+    const reloadConfig = useCallback(() => {
+        try {
+            const activeConfigs = scorecardConfigService.getActiveConfigs();
+
+            if (activeConfigs.length > 0) {
+                const activeConfig = activeConfigs[0];
+                console.log(`🔄 Reloading config from: ${activeConfig.name}`);
+                setConfig({
+                    categories: activeConfig.categories,
+                    kpis: activeConfig.kpis
+                });
+            } else {
+                console.warn('⚠️ No active scorecard found during reload');
+            }
+        } catch (error) {
+            console.error('❌ Failed to reload config:', error);
+        }
+    }, []);
+
+    // CRITICAL FIX: Listen for scorecard save events and reload config
+    useEffect(() => {
+        const handleScorecardSaved = () => {
+            console.log('📢 Scorecard saved event detected, reloading config...');
+            reloadConfig();
+        };
+
+        window.addEventListener('scorecard-saved', handleScorecardSaved);
+        return () => window.removeEventListener('scorecard-saved', handleScorecardSaved);
+    }, [reloadConfig]);
 
     const startAudit = useCallback((vendorId: string, period: string) => {
         const key = `${vendorId}-${period}`;
@@ -294,6 +341,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setVendor,
             setVendorId,
             setPeriod,
+            reloadConfig,  // NEW: Expose reload function
             startAudit,
             markAsEditing,
             setAuditStatus,

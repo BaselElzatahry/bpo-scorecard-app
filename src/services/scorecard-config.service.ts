@@ -1,0 +1,166 @@
+import { ScorecardConfig } from '../types';
+
+/**
+ * Service for managing multiple scorecard configurations
+ * Supports CRUD operations and persistence to localStorage
+ */
+class ScorecardConfigService {
+    private readonly STORAGE_KEY = 'scorecard_configs';
+
+    /**
+     * Get all scorecard configurations
+     */
+    getAllConfigs(): ScorecardConfig[] {
+        try {
+            const saved = localStorage.getItem(this.STORAGE_KEY);
+            if (!saved) {
+                console.log('📋 No saved scorecard configs found, initializing defaults');
+                this.initializeDefaults();
+                return this.getAllConfigs();
+            }
+
+            const configs = JSON.parse(saved);
+            console.log(`📋 Loaded ${configs.length} scorecard configuration(s)`);
+            return configs;
+        } catch (error) {
+            console.error('❌ Failed to load scorecard configs:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get a specific scorecard configuration by ID
+     */
+    getConfig(id: string): ScorecardConfig | null {
+        const configs = this.getAllConfigs();
+        const config = configs.find(c => c.id === id);
+
+        if (!config) {
+            console.error(`❌ Scorecard config '${id}' not found`);
+            return null;
+        }
+
+        return config;
+    }
+
+    /**
+     * Get only active configurations (available for selection)
+     */
+    getActiveConfigs(): ScorecardConfig[] {
+        return this.getAllConfigs().filter(c => c.isActive);
+    }
+
+    /**
+     * Save or update a scorecard configuration
+     */
+    saveConfig(config: ScorecardConfig): void {
+        try {
+            const configs = this.getAllConfigs();
+            const existingIndex = configs.findIndex(c => c.id === config.id);
+
+            // Update timestamp
+            const updatedConfig = {
+                ...config,
+                updatedAt: new Date().toISOString()
+            };
+
+            if (existingIndex >= 0) {
+                // Update existing
+                configs[existingIndex] = updatedConfig;
+                console.log(`💾 Updated scorecard config: ${config.name}`);
+            } else {
+                // Add new
+                configs.push(updatedConfig);
+                console.log(`💾 Created new scorecard config: ${config.name}`);
+            }
+
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(configs));
+        } catch (error) {
+            console.error('❌ Failed to save scorecard config:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete a scorecard configuration
+     */
+    deleteConfig(id: string): void {
+        try {
+            const configs = this.getAllConfigs();
+            const filtered = configs.filter(c => c.id !== id);
+
+            if (filtered.length === configs.length) {
+                console.warn(`⚠️ Scorecard config '${id}' not found, nothing to delete`);
+                return;
+            }
+
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(filtered));
+            console.log(`🗑️ Deleted scorecard config: ${id}`);
+        } catch (error) {
+            console.error('❌ Failed to delete scorecard config:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Initialize with default BPO Training scorecard
+     * Called on first app load or when no configs exist
+     */
+    initializeDefaults(): void {
+        // Import default categories and KPIs
+        const { DEFAULT_CATEGORIES, DEFAULT_KPIS } = require('../data/defaults');
+
+        const defaultConfig: ScorecardConfig = {
+            id: 'bpo-training-default',
+            name: 'BPO Training Delivery Scorecard',
+            description: 'Default scorecard for BPO training delivery audits',
+            department: 'BPO',
+            version: 1,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            isActive: true,
+            categories: DEFAULT_CATEGORIES,
+            kpis: DEFAULT_KPIS
+        };
+
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify([defaultConfig]));
+        console.log('✅ Initialized default BPO Training scorecard');
+    }
+
+    /**
+     * Duplicate a scorecard configuration with a new ID
+     */
+    duplicateConfig(sourceId: string, newName: string): ScorecardConfig | null {
+        const source = this.getConfig(sourceId);
+        if (!source) {
+            return null;
+        }
+
+        const newConfig: ScorecardConfig = {
+            ...source,
+            id: `${sourceId}-copy-${Date.now()}`,
+            name: newName,
+            version: 1,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        this.saveConfig(newConfig);
+        return newConfig;
+    }
+
+    /**
+     * Get default/fallback configuration ID
+     */
+    getDefaultConfigId(): string {
+        const configs = this.getActiveConfigs();
+        if (configs.length === 0) {
+            this.initializeDefaults();
+            return 'bpo-training-default';
+        }
+        return configs[0].id;
+    }
+}
+
+// Export singleton instance
+export const scorecardConfigService = new ScorecardConfigService();
