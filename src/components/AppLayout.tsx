@@ -16,9 +16,11 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { ConfirmationModal } from './ConfirmationModal';
+import { scorecardConfigService } from '../services/scorecard-config.service';
+import { ScorecardSelector } from './ScorecardSelector';
 
 export const AppLayout: React.FC = () => {
-    const { config, currentVendorId, currentPeriod, startedAudits, auditStatus, clearAudit, editingAudits, setAuditStatus } = useApp();
+    const { config, currentVendorId, currentPeriod, startedAudits, audits, auditStatus, auditConfigs, clearAudit, editingAudits, setAuditStatus } = useApp();
     const { user, logout } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
@@ -76,6 +78,29 @@ export const AppLayout: React.FC = () => {
         }
     };
 
+    // Determine the active config for the sidebar
+    // If an audit is started, we MUST use that audit's configuration
+    const activeConfig = React.useMemo(() => {
+        const key = `${currentVendorId}-${currentPeriod}`;
+
+        // Priority 1: Check if an audit is currently associated with a specific config ID
+        if (auditConfigs && auditConfigs[key]) {
+            const specificConfig = scorecardConfigService.getConfig(auditConfigs[key]);
+            if (specificConfig) return specificConfig;
+        }
+
+        // Priority 2: Check existing audit entries (legacy support)
+        const currentAudits = audits[key];
+        if (currentAudits && currentAudits.length > 0) {
+            const configId = currentAudits[0].scorecardConfigId;
+            if (configId) {
+                const specificConfig = scorecardConfigService.getConfig(configId);
+                if (specificConfig) return specificConfig;
+            }
+        }
+        return config; // Fallback to global default
+    }, [config, audits, auditConfigs, currentVendorId, currentPeriod]);
+
     return (
         <div className="min-h-screen bg-slate-50 flex">
             {/* Sidebar */}
@@ -86,7 +111,7 @@ export const AppLayout: React.FC = () => {
                         <img src="/keeta-logo.png" alt="Keeta Logo" className="w-14 h-14 rounded-xl shadow-glow" />
                         <div>
                             <h1 className="text-xl font-bold tracking-tight text-white">Keeta</h1>
-                            <p className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">GCC Training Scorecard</p>
+                            <p className="text-[10px] text-slate-400 font-medium tracking-widest uppercase">BPO Scorecard</p>
                         </div>
                     </div>
                 </div>
@@ -94,6 +119,9 @@ export const AppLayout: React.FC = () => {
                 {/* Scrollable Navigation */}
                 <div className="flex-1 overflow-y-auto px-8 pb-4 custom-scrollbar">
                     <nav className="space-y-1">
+                        <div className="pb-4">
+                            <ScorecardSelector />
+                        </div>
                         <NavLink
                             to="/"
                             onClick={(e) => handleNavigationAttempt('/', e)}
@@ -132,7 +160,7 @@ export const AppLayout: React.FC = () => {
                             if (isStarted && status !== 'finalized') {
                                 return (
                                     <div
-                                        onClick={() => navigate(`/audit/${config.categories[0].id}`)}
+                                        onClick={() => navigate(`/audit/${activeConfig.categories[0].id}`)}
                                         className="mx-4 mt-4 mb-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-3 animate-pulse cursor-pointer hover:bg-amber-500/20 transition-colors group"
                                     >
                                         <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]" />
@@ -147,40 +175,6 @@ export const AppLayout: React.FC = () => {
                             return null;
                         })()}
 
-                        <div className="pt-4 pb-2">
-                            <p className="px-4 text-[10px] uppercase font-bold tracking-wider text-slate-500">Audit Categories</p>
-                        </div>
-
-                        {config.categories.map(cat => {
-                            const key = `${currentVendorId}-${currentPeriod}`;
-                            const isStarted = startedAudits[key];
-                            const status = auditStatus[key];
-                            const isAuditActive = isStarted && status !== 'finalized';
-
-                            return (
-                                <NavLink
-                                    key={cat.id}
-                                    to={`/audit/${cat.id}`}
-                                    onClick={(e) => {
-                                        if (!isAuditActive) {
-                                            e.preventDefault(); // Prevent navigation if no audit
-                                        } else {
-                                            handleNavigationAttempt(`/audit/${cat.id}`, e); // Warn if audit active
-                                        }
-                                    }}
-                                    className={({ isActive }) => clsx(
-                                        "group flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200",
-                                        isActive
-                                            ? "bg-white/10 text-white border-l-4 border-keeta-primary"
-                                            : "text-slate-400 hover:bg-white/5 hover:text-white",
-                                        !isAuditActive && "opacity-40 cursor-not-allowed hover:bg-transparent hover:text-slate-400"
-                                    )}
-                                >
-                                    <span className="flex-1 truncate">{cat.label}</span>
-                                    {location.pathname.includes(cat.id) && <ChevronRight size={14} className="opacity-50" />}
-                                </NavLink>
-                            );
-                        })}
 
                         <div className="pt-4 pb-2">
                             <p className="px-4 text-[10px] uppercase font-bold tracking-wider text-slate-500">Analysis & Admin</p>

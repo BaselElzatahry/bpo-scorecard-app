@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { Calendar, Trash2, Download, Search, Edit, CheckSquare, Square, CheckCircle } from 'lucide-react';
@@ -8,9 +8,10 @@ import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { ConfirmationModal } from './ConfirmationModal';
 import { VendorSelector } from './VendorSelector';
+import { scorecardConfigService } from '../services/scorecard-config.service';
 
 export const ReportsPage: React.FC = () => {
-    const { vendors, config, audits, startedAudits, auditStatus, deleteAudit, setVendor, setPeriod, setAuditStatus, markAsEditing } = useApp();
+    const { vendors, config, audits, startedAudits, auditStatus, deleteAudit, setVendor, setPeriod, setAuditStatus, markAsEditing, activeScorecardId } = useApp();
     const { showToast } = useToast();
     const navigate = useNavigate();
 
@@ -19,7 +20,13 @@ export const ReportsPage: React.FC = () => {
     const [startMonth, setStartMonth] = useState('2024-01'); // Default to show history from 2024
     const [endMonth, setEndMonth] = useState(new Date().toISOString().slice(0, 7));
     const [selectedAuditKeys, setSelectedAuditKeys] = useState<Set<string>>(new Set());
-    const [sortOrder, setSortOrder] = useState<'date-desc' | 'date-asc' | 'vendor-asc' | 'vendor-desc'>('date-desc');
+    const [sortOrder, setSortOrder] = useState<'date-desc' | 'date-asc' | 'vendor-asc' | 'vendor-desc' | 'score-desc' | 'score-asc'>('date-desc');
+
+    // DEBUG: Monitor startedAudits update
+    useEffect(() => {
+        console.log('📊 ReportsPage: startedAudits keys:', Object.keys(startedAudits));
+    }, [startedAudits]);
+
 
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [showFinalizeModal, setShowFinalizeModal] = useState(false);
@@ -27,6 +34,16 @@ export const ReportsPage: React.FC = () => {
     const [minScore, setMinScore] = useState<number | ''>('');
     const [maxScore, setMaxScore] = useState<number | ''>('');
 
+    // New state for period picker popover
+    const [showPeriodPicker, setShowPeriodPicker] = useState(false);
+
+    const formatMonth = (value: string) =>
+        new Date(value + "-01").toLocaleString("default", {
+            month: "short",
+            year: "numeric",
+        });
+
+    // --- Derived Data (The List) ---
     // --- Derived Data (The List) ---
     const filteredAudits = useMemo(() => {
         // 1. Get all started audit keys
@@ -34,21 +51,89 @@ export const ReportsPage: React.FC = () => {
 
         // 2. Map to objects
         const list = keys.map(key => {
-            // Fix: Handle UUIDs containing hyphens. Period is always YYYY-MM (7 chars) at the end.
-            const period = key.slice(-7);
-            const vendorId = key.slice(0, -8);
+            // Determine structure: "vendorId-period-configId" or "vendorId-period"
+            // The period is always YYYY-MM (7 chars) but its position varies.
+            // Best strategy: check if audit exists for key.
+            const vendorAudits = audits[key] || [];
+
+            // Attempt to parse key parts
+            const parts = key.split('-');
+            // If composite: at least 3 parts (vendor-period...) + potential configId
+            // BUT simpler: We can just use the audit data to determine vendor/config if available.
+            // If audits is empty, we must rely on key parsing.
+
+            let vendorId: string;
+            let period: string;
+            let configId: string | undefined;
+
+            if (vendorAudits.length > 0) {
+                vendorId = vendorAudits[0].vendorId;
+                period = vendorAudits[0].period;
+                configId = vendorAudits[0].scorecardConfigId;
+            } else {
+                // Robust Regex Parsing
+                // Matches: VendorId (lazy) - Period (YYYY-MM) - ConfigId (optional)
+                const match = key.match(/^(.*?)-(\d{4}-\d{2})(?:-(.+))?$/);
+
+                if (match) {
+                    vendorId = match[1];
+                    period = match[2];
+                    configId = match[3]; // undefined if not present
+                } else {
+                    // Fallback
+                    vendorId = 'unknown';
+                    period = 'unknown';
+                }
+            }
+
             const vendor = vendors.find(v => v.id === vendorId);
             const status = auditStatus[key] || 'draft';
 
             // Calculate score
-            const vendorAudits = audits[key] || [];
-            const results = calculateScores(vendorAudits, config.categories, config.kpis, vendorId, period);
+            // Must use specific config if available, else default
+            let scoringCategories = config.categories;
+            let scoringKpis = config.kpis;
+
+            if (configId) {
+                // If specific config is associated
+                // Note: configService needs to be available or we assume it's loaded?
+                // ReportsPage has direct access to config, but not all configs?
+                // Actually app context only exposes 'config' (current loaded one) or we must fetch?
+                // The service is singleton so we can use it.
+                // We'll trust calculateScore utils to handle it but we need to pass the right defs.
+                // UNFORTUNATELY context doesn't expose `scorecardConfigService` directly but imports it.
+                // Let's import the service.
+            }
+            // Better: use AppContext `calculateScore` helper which handles this!
+            // But AppContext.calculateScore takes (vendorId, period, configId).
+            // We can't use `calculateScores` utility directly if we want dynamic config resolution
+            // unless we manually do it.
+            // Since we can't easily call hook-based `calculateScore` in a loop inside useMemo without rules of hooks...
+            // Wait, calculateScore IS a function from context, not a hook. We can call it!
+
+            // However, calculateScore in context relies on `audits` state which we have.
+            // Let's use the raw implementation locally or modify context to expose a pure helper?
+            // Actually, we can just use `audits[key]` and passed config.
+            // BUT if the audit uses a different config than `config` from context, score will be wrong.
+            // We should use `scorecardConfigService` here.
+
+            const usedConfigId = configId || (vendorAudits.length > 0 ? vendorAudits[0].scorecardConfigId : undefined);
+            const auditConfig = usedConfigId ? scorecardConfigService.getConfig(usedConfigId) : undefined;
+
+            if (auditConfig) {
+                scoringCategories = auditConfig.categories;
+                scoringKpis = auditConfig.kpis;
+            }
+
+            const results = calculateScores(vendorAudits, scoringCategories, scoringKpis, vendorId, period);
 
             return {
                 key,
                 vendorId,
                 vendorName: vendor?.name || 'Unknown Vendor',
                 period,
+                configId: usedConfigId,
+                configName: auditConfig?.name,
                 status,
                 score: results.score,
                 rag: results.rag,
@@ -63,6 +148,27 @@ export const ReportsPage: React.FC = () => {
 
         // 4. Filter
         const filtered = list.filter(item => {
+            // Context Filter (Strict Scoping)
+            // If item has a configId, it MUST match activeScorecardId
+            if (item.configId && item.configId !== activeScorecardId) {
+                return false;
+            }
+            // If item has NO configId (legacy), we might choose to hide it or show it?
+            // "Cross-model data leakage" prevention suggests hiding it if we are in a specific model context.
+            // Let's assume strict mode: only show if explicitly matches, OR if legacy and active is default?
+            // For safety, let's allow legacy items if activeScorecardId is the default config?
+            // Better: If item.configId is undefined, it belongs to "default" context.
+
+            // For now, consistent behavior:
+            if (item.configId && item.configId !== activeScorecardId) return false;
+            if (!item.configId && activeScorecardId) {
+                // Check if activeScorecardId is the default one? 
+                // It's safer to HIDE implicit legacy data when in a strict new model context.
+                // But for migration, we might show them. 
+                // Let's hide for now to satisfy "No feature should operate without knowing Which scorecard model is active".
+                // Actually, let's verify if the legacy audit's structure matches the active config??
+                // Simpler: Just filter by ID match if ID exists.
+            }
             // Vendor Filter
             if (selectedVendorIds.length > 0 && !selectedVendorIds.includes(item.vendorId)) {
                 return false;
@@ -174,10 +280,23 @@ export const ReportsPage: React.FC = () => {
         const count = selectedAuditKeys.size;
 
         selectedAuditKeys.forEach(key => {
-            // Fix: Period is always last 7 chars (YYYY-MM), vendorId is everything before the last hyphen
-            const period = key.slice(-7);
-            const vendorId = key.slice(0, -8); // Remove '-YYYY-MM' (8 chars total)
-            deleteAudit(vendorId, period);
+            // We need to find the full audit object to get the configId
+            const audit = filteredAudits.find(a => a.key === key);
+            console.log(`🗑️ ReportsPage Requesting delete for key: ${key}`, audit);
+            if (audit) {
+                deleteAudit(audit.vendorId, audit.period, audit.configId);
+            } else {
+                // Fallback for safety using same regex
+                const match = key.match(/^(.*?)-(\d{4}-\d{2})(?:-(.+))?$/);
+                if (match) {
+                    deleteAudit(match[1], match[2], match[3]);
+                } else {
+                    // Last ditch attempt
+                    const period = key.slice(-7);
+                    const vendorId = key.slice(0, -8);
+                    deleteAudit(vendorId, period);
+                }
+            }
         });
 
         setSelectedAuditKeys(new Set());
@@ -189,7 +308,7 @@ export const ReportsPage: React.FC = () => {
     };
 
     const handleDeleteSingle = (audit: typeof filteredAudits[0]) => {
-        deleteAudit(audit.vendorId, audit.period);
+        deleteAudit(audit.vendorId, audit.period, audit.configId);
         showToast('Audit deleted successfully', 'success');
     };
 
@@ -207,10 +326,23 @@ export const ReportsPage: React.FC = () => {
 
         // Iterate through SELECTED audits only
         filteredAudits.filter(a => selectedAuditKeys.has(a.key)).forEach(audit => {
-            const { vendorId, period, vendorName } = audit;
+            const { vendorId, period, vendorName, configId } = audit;
 
             const vendorAudits = audits[audit.key] || [];
-            const scores = calculateScores(vendorAudits, config.categories, config.kpis, vendorId, period);
+
+            // Resolve config for export
+            let exportCategories = config.categories;
+            let exportKpis = config.kpis;
+
+            if (configId) {
+                const auditConfig = require('../services/scorecard-config.service').scorecardConfigService.getConfig(configId);
+                if (auditConfig) {
+                    exportCategories = auditConfig.categories;
+                    exportKpis = auditConfig.kpis;
+                }
+            }
+
+            const scores = calculateScores(vendorAudits, exportCategories, exportKpis, vendorId, period);
 
             // Row 1: Overall Score Summary
             data.push({
@@ -227,7 +359,7 @@ export const ReportsPage: React.FC = () => {
             });
 
             // Rows for Categories
-            config.categories.forEach(cat => {
+            exportCategories.forEach(cat => {
                 const catScore = scores.categoryScores[cat.id];
                 data.push({
                     Type: 'CATEGORY',
@@ -243,7 +375,7 @@ export const ReportsPage: React.FC = () => {
                 });
 
                 // Rows for KPIs
-                const catKpis = config.kpis.filter(k => k.categoryId === cat.id);
+                const catKpis = exportKpis.filter(k => k.categoryId === cat.id);
                 catKpis.forEach(kpi => {
                     const kpiScore = catScore.kpiScores[kpi.id];
                     const auditEntry = vendorAudits.find(a => a.kpiId === kpi.id);
@@ -272,205 +404,257 @@ export const ReportsPage: React.FC = () => {
     };
 
     return (
-        <div className="space-y-8 animate-in fade-in pb-20">
-            {/* Header */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-                {/* Header */}
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <h2 className="text-xl font-bold text-slate-900">Reports & Management</h2>
-                        <p className="text-sm text-slate-500">Manage, edit, and export vendor scorecards.</p>
-                    </div>
+        <div className="space-y-6 animate-in fade-in pb-20">
 
-                    {/* Search + Score Range + Sort */}
-                    <div className="flex flex-wrap gap-3 items-center">
-                        {/* Search */}
-                        <div className="flex items-center bg-slate-50 rounded-lg border border-slate-200 px-3 py-2">
-                            <input
-                                type="text"
-                                placeholder="Search vendor..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="bg-transparent text-sm text-slate-700 focus:outline-none w-48"
-                            />
-                        </div>
-
-                        {/* Score Range */}
-                        <div className="flex items-center gap-2 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                            <span>Score:</span>
-                            <input
-                                type="number"
-                                placeholder="Min"
-                                min="0"
-                                max="100"
-                                value={minScore}
-                                onChange={(e) => setMinScore(e.target.value === '' ? '' : Number(e.target.value))}
-                                className="w-16 bg-transparent text-sm text-slate-700 focus:outline-none"
-                            />
-                            <span>-</span>
-                            <input
-                                type="number"
-                                placeholder="Max"
-                                min="0"
-                                max="100"
-                                value={maxScore}
-                                onChange={(e) => setMaxScore(e.target.value === '' ? '' : Number(e.target.value))}
-                                className="w-16 bg-transparent text-sm text-slate-700 focus:outline-none"
-                            />
-                        </div>
-
-                        {/* Sort */}
-                        <div className="flex items-center gap-2 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                            <span>Sort by:</span>
-                            <select
-                                value={sortOrder}
-                                onChange={(e) => setSortOrder(e.target.value as any)}
-                                className="bg-transparent focus:outline-none text-slate-700"
-                            >
-                                <option value="date-desc">Date (Newest First)</option>
-                                <option value="date-asc">Date (Oldest First)</option>
-                                <option value="vendor-asc">Vendor (A-Z)</option>
-                                <option value="vendor-desc">Vendor (Z-A)</option>
-                                <option value="score-desc">Score (High to Low)</option>
-                                <option value="score-asc">Score (Low to High)</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Date Range */}
-                <div className="flex flex-wrap gap-3 items-center">
-                    <div className="flex items-center gap-2 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                        <span>From:</span>
-                        <input
-                            type="month"
-                            value={startMonth}
-                            onChange={(e) => setStartMonth(e.target.value)}
-                            className="bg-transparent focus:outline-none text-slate-700"
-                        />
-                    </div>
-                    <div className="flex items-center gap-2 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                        <span>To:</span>
-                        <input
-                            type="month"
-                            value={endMonth}
-                            onChange={(e) => setEndMonth(e.target.value)}
-                            className="bg-transparent focus:outline-none text-slate-700"
-                        />
-                    </div>
-                </div>
-
-                {/* Vendor Pills */}
-                <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={() => setSelectedVendorIds([])}
-                        className={clsx(
-                            "px-4 py-2 rounded-full text-sm font-medium transition-colors",
-                            selectedVendorIds.length === 0
-                                ? "bg-slate-900 text-white"
-                                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                        )}
-                    >
-                        All Vendors
-                    </button>
-                    {vendors.map(v => (
-                        <button
-                            key={v.id}
-                            onClick={() => toggleVendor(v.id)}
-                            className={clsx(
-                                "px-4 py-2 rounded-full text-sm font-medium transition-colors",
-                                selectedVendorIds.includes(v.id)
-                                    ? "bg-keeta-primary text-slate-900"
-                                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-                            )}
-                        >
-                            {v.name}
-                        </button>
-                    ))}
-                </div>
+            {/* Page Header */}
+            <div className="space-y-1">
+                <h1 className="text-2xl font-semibold text-slate-900">
+                    Reports & Management
+                </h1>
+                <p className="text-sm text-slate-500">
+                    Review, manage, and export vendor scorecards.
+                </p>
             </div>
 
+            {/* Toolbar */}
+            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-sm border border-slate-200">
+
+                {/* Search */}
+                <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2">
+                    <Search size={16} className="text-slate-400" />
+                    <input
+                        type="text"
+                        placeholder="Search vendor"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="bg-transparent text-sm text-slate-700 focus:outline-none w-44"
+                    />
+                </div>
+
+                {/* Period Selector */}
+                <div className="relative">
+                    {/* Trigger Button */}
+                    <button
+                        onClick={() => setShowPeriodPicker(prev => !prev)}
+                        className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 transition"
+                    >
+                        <Calendar size={16} className="text-slate-400" />
+                        {startMonth && endMonth
+                            ? `${formatMonth(startMonth)} → ${formatMonth(endMonth)}`
+                            : "Select period"}
+                    </button>
+
+                    {/* Popover */}
+                    {showPeriodPicker && (
+                        <div className="absolute z-50 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+
+                            {/* Header */}
+                            <div className="mb-4">
+                                <h4 className="text-sm font-semibold text-slate-900">
+                                    Select period
+                                </h4>
+                                <p className="text-xs text-slate-500">
+                                    Monthly date range
+                                </p>
+                            </div>
+
+                            {/* Month Inputs */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-slate-500">
+                                        From
+                                    </label>
+                                    <input
+                                        type="month"
+                                        value={startMonth}
+                                        onChange={(e) => setStartMonth(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                    />
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-xs font-medium text-slate-500">
+                                        To
+                                    </label>
+                                    <input
+                                        type="month"
+                                        value={endMonth}
+                                        onChange={(e) => setEndMonth(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="mt-4 flex justify-end gap-2">
+                                <button
+                                    onClick={() => setShowPeriodPicker(false)}
+                                    className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => setShowPeriodPicker(false)}
+                                    className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+                                >
+                                    Apply
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Score Filter */}
+                <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm">
+                    <span className="text-slate-500">Score</span>
+                    <input
+                        type="number"
+                        placeholder="Min"
+                        min="0"
+                        max="100"
+                        value={minScore}
+                        onChange={(e) =>
+                            setMinScore(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                        className="w-12 bg-transparent focus:outline-none text-slate-700"
+                    />
+                    <span className="text-slate-400">–</span>
+                    <input
+                        type="number"
+                        placeholder="Max"
+                        min="0"
+                        max="100"
+                        value={maxScore}
+                        onChange={(e) =>
+                            setMaxScore(e.target.value === '' ? '' : Number(e.target.value))
+                        }
+                        className="w-12 bg-transparent focus:outline-none text-slate-700"
+                    />
+                </div>
+
+                {/* Sort */}
+                <select
+                    value={sortOrder}
+                    onChange={(e) => setSortOrder(e.target.value as any)}
+                    className="ml-auto rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700 focus:outline-none hover:bg-slate-200 transition"
+                >
+                    <option value="date-desc">Newest</option>
+                    <option value="date-asc">Oldest</option>
+                    <option value="vendor-asc">Vendor (A–Z)</option>
+                    <option value="vendor-desc">Vendor (Z–A)</option>
+                    <option value="score-desc">Score ↓</option>
+                    <option value="score-asc">Score ↑</option>
+                </select>
+            </div>
+
+            {/* Vendor Filters */}
+            <div className="flex flex-wrap gap-2">
+                <button
+                    onClick={() => setSelectedVendorIds([])}
+                    className={clsx(
+                        "px-3 py-1.5 rounded-full text-xs font-semibold transition",
+                        selectedVendorIds.length === 0
+                            ? "bg-slate-900 text-white"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    )}
+                >
+                    All Vendors
+                </button>
+
+                {vendors.map(v => (
+                    <button
+                        key={v.id}
+                        onClick={() => toggleVendor(v.id)}
+                        className={clsx(
+                            "px-3 py-1.5 rounded-full text-xs font-semibold transition",
+                            selectedVendorIds.includes(v.id)
+                                ? "bg-keeta-primary text-slate-900"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                        )}
+                    >
+                        {v.name}
+                    </button>
+                ))}
+            </div>
 
             {/* Data Table */}
             <div className="bg-white rounded-2xl shadow-card border border-slate-100 overflow-hidden">
                 <table className="w-full">
-                    <thead className="bg-slate-50 border-b border-slate-200">
+                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-200">
                         <tr>
-                            <th className="px-6 py-4 text-left w-12">
-                                <button onClick={toggleSelectAll} className="text-slate-400 hover:text-keeta-primary transition-colors">
-                                    {selectedAuditKeys.size > 0 && selectedAuditKeys.size === filteredAudits.length ? (
-                                        <CheckSquare size={20} className="text-keeta-primary" />
-                                    ) : (
-                                        <Square size={20} />
-                                    )}
-                                </button>
-                            </th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Vendor</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Period</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Score</th>
-                            <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                            <th className="px-6 py-4 w-12"></th>
+                            <th className="px-6 py-4 text-left">Vendor</th>
+                            <th className="px-6 py-4 text-left">Period</th>
+                            <th className="px-6 py-4 text-left">Score</th>
+                            <th className="px-6 py-4 text-left">Status</th>
+                            <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
                     </thead>
+
                     <tbody className="divide-y divide-slate-100">
                         {filteredAudits.length > 0 ? (
                             filteredAudits.map(audit => (
-                                <tr key={audit.key} className={clsx(
-                                    "hover:bg-slate-50 transition-colors group",
-                                    selectedAuditKeys.has(audit.key) && "bg-slate-50"
-                                )}>
+                                <tr
+                                    key={audit.key}
+                                    className={clsx(
+                                        "hover:bg-slate-50 transition",
+                                        selectedAuditKeys.has(audit.key) && "bg-slate-50"
+                                    )}
+                                >
                                     <td className="px-6 py-4">
-                                        <button onClick={() => toggleSelectAudit(audit.key)} className="text-slate-400 hover:text-keeta-primary transition-colors">
+                                        <button onClick={() => toggleSelectAudit(audit.key)}>
                                             {selectedAuditKeys.has(audit.key) ? (
-                                                <CheckSquare size={20} className="text-keeta-primary" />
+                                                <CheckSquare size={18} className="text-keeta-primary" />
                                             ) : (
-                                                <Square size={20} />
+                                                <Square size={18} className="text-slate-400" />
                                             )}
                                         </button>
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <span className="font-bold text-slate-900">{audit.vendorName}</span>
+
+                                    <td className="px-6 py-4 font-semibold text-slate-900">
+                                        {audit.vendorName}
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <span className="font-medium text-slate-600">{audit.period}</span>
+
+                                    <td className="px-6 py-4 text-slate-600">
+                                        {audit.period}
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2">
-                                            <span className={clsx(
-                                                "text-lg font-black",
-                                                audit.rag === 'green' ? "text-green-500" :
-                                                    audit.rag === 'amber' ? "text-amber-500" : "text-red-500"
-                                            )}>
-                                                {Math.round(audit.score)}
-                                            </span>
-                                            <span className="text-xs text-slate-400">/ 100</span>
-                                        </div>
-                                    </td>
+
                                     <td className="px-6 py-4">
                                         <span className={clsx(
-                                            "px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wider",
-                                            audit.status === 'finalized' ? "bg-green-100 text-green-700" :
-                                                audit.status === 'appealed' ? "bg-amber-100 text-amber-700" :
-                                                    "bg-slate-100 text-slate-600"
+                                            "text-lg font-bold",
+                                            audit.rag === 'green' && "text-green-500",
+                                            audit.rag === 'amber' && "text-amber-500",
+                                            audit.rag === 'red' && "text-red-500"
+                                        )}>
+                                            {Math.round(audit.score)}
+                                        </span>
+                                        <span className="text-xs text-slate-400"> / 100</span>
+                                    </td>
+
+                                    <td className="px-6 py-4">
+                                        <span className={clsx(
+                                            "px-2 py-1 rounded-md text-xs font-semibold uppercase",
+                                            audit.status === 'finalized' && "bg-green-100 text-green-700",
+                                            audit.status === 'appealed' && "bg-amber-100 text-amber-700",
+                                            audit.status === 'draft' && "bg-slate-100 text-slate-600"
                                         )}>
                                             {audit.status}
                                         </span>
                                     </td>
+
                                     <td className="px-6 py-4 text-right">
-                                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className="flex justify-end gap-3 text-slate-400">
                                             <button
                                                 onClick={() => handleEditClick(audit)}
-                                                className="text-slate-400 hover:text-keeta-primary font-medium text-sm flex items-center gap-1"
-                                                title="Edit audit"
+                                                className="hover:text-keeta-primary transition"
                                             >
-                                                <Edit size={14} /> Edit
+                                                <Edit size={14} />
                                             </button>
                                             <button
                                                 onClick={() => handleDeleteSingle(audit)}
-                                                className="text-slate-400 hover:text-red-500 font-medium text-sm flex items-center gap-1"
-                                                title="Delete audit"
+                                                className="hover:text-red-500 transition"
                                             >
-                                                <Trash2 size={14} /> Delete
+                                                <Trash2 size={14} />
                                             </button>
                                         </div>
                                     </td>
@@ -478,10 +662,10 @@ export const ReportsPage: React.FC = () => {
                             ))
                         ) : (
                             <tr>
-                                <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                                <td colSpan={6} className="py-16 text-center text-slate-500">
                                     <div className="flex flex-col items-center gap-2">
                                         <Search size={32} className="text-slate-300" />
-                                        <p>No scorecards found matching your filters.</p>
+                                        <p>No scorecards match your filters.</p>
                                     </div>
                                 </td>
                             </tr>
@@ -490,6 +674,7 @@ export const ReportsPage: React.FC = () => {
                 </table>
             </div>
 
+            {/* Modals */}
             <ConfirmationModal
                 isOpen={showDeleteModal}
                 onClose={() => setShowDeleteModal(false)}

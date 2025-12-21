@@ -216,39 +216,21 @@ export function calculateScores(
         catKpis.forEach(kpi => {
             const audit = relevantAudits.find(a => a.kpiId === kpi.id);
 
-            if (audit && audit.auditsDone > 0) {
+            if (audit) {
                 // Calculate percentage first
                 // Special handling for attrition rate KPI (1.3)
                 let percentage: number;
                 let score: number;
 
-                if (kpi.id === '1.3') {
-                    // CRITICAL FIX: Attrition Rate can have two input modes:
-                    // 1. Binary mode (Pass/Fail buttons): auditsDone=1, auditsMet=0 or 1
-                    // 2. Numeric mode: actual counts of total started and total dropped
-
-                    const isBinaryInput = audit.auditsDone === 1 && (audit.auditsMet === 0 || audit.auditsMet === 1);
-
-                    if (isBinaryInput) {
-                        // Binary Pass/Fail button input
-                        // auditsMet=1 means Pass (attrition ≤ 15%) → score 100
-                        // auditsMet=0 means Fail (attrition > 15%) → score 0
-                        score = audit.auditsMet === 1 ? 100 : 0;
-                        percentage = audit.auditsMet === 1 ? 10 : 20; // Representative values for display
-                    } else {
-                        // Numeric input mode: auditsMet = Total Dropped, auditsDone = Total Started
-                        const attritionRate = (audit.auditsMet / audit.auditsDone) * 100;
-                        // Binary scoring: 100 if attrition ≤ 15%, 0 otherwise
-                        score = attritionRate <= 15 ? 100 : 0;
-                        percentage = attritionRate;
-                    }
+                // Standard calculation:
+                // If auditsDone > 0, calculate % met.
+                // If auditsDone === 0, score is 100 (Business Rule).
+                if (audit.auditsDone === 0) {
+                    score = 100;
+                    percentage = 0;
                 } else {
-                    // Standard calculation for all other KPIs
-                    percentage = audit.auditsDone > 0
-                        ? (audit.auditsMet / audit.auditsDone) * 100
-                        : 0;
-                    // Get compliance score using the configured scoring logic
-                    score = calculateComplianceScore(percentage, kpi.scoringLogic || 'standard');
+                    percentage = (audit.auditsMet / audit.auditsDone) * 100;
+                    score = calculateComplianceScore(percentage, kpi);
                 }
 
                 kpiScores[kpi.id] = {

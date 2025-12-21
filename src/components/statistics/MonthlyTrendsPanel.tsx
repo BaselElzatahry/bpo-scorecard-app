@@ -4,21 +4,35 @@ import { calculateScores } from '../../utils/scoring';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area } from 'recharts';
 import { TrendingUp, TrendingDown, Minus, Calendar, Award, AlertCircle } from 'lucide-react';
 import clsx from 'clsx';
+import { scorecardConfigService } from '../../services/scorecard-config.service';
 
 export const MonthlyTrendsPanel: React.FC = () => {
-    const { vendors, audits, config } = useApp();
+    // USE GLOBAL CONTEXT
+    const { vendors, audits, activeScorecardId } = useApp();
     const [selectedVendorId, setSelectedVendorId] = useState<string>(vendors[0]?.id || '');
     const [compareVendorId, setCompareVendorId] = useState<string>('none');
+
+    // Derived config object
+    const activeConfigs = React.useMemo(() => scorecardConfigService.getActiveConfigs(), []);
+    const selectedConfig = React.useMemo(() => {
+        return activeConfigs.find(c => c.id === activeScorecardId) || activeConfigs[0];
+    }, [activeConfigs, activeScorecardId]);
 
     // Get all periods sorted
     const allPeriods = useMemo(() => {
         const periods = new Set<string>();
         Object.keys(audits).forEach(key => {
-            // The key format is strictly `${vendorId}-${period}`
-            // Period is always YYYY-MM (7 chars)
-            const p = key.slice(-7);
-            if (p.match(/^\d{4}-\d{2}$/)) {
-                periods.add(p);
+            // Regex to match "vendor-period-config" or "vendor-period"
+            // Captures the period (YYYY-MM)
+            const match = key.match(/-(\d{4}-\d{2})/);
+            if (match) {
+                periods.add(match[1]);
+            } else {
+                // Fallback: try slicing if it looks like a legacy key
+                const p = key.slice(-7);
+                if (p.match(/^\d{4}-\d{2}$/)) {
+                    periods.add(p);
+                }
             }
         });
         return Array.from(periods).sort();
@@ -29,47 +43,44 @@ export const MonthlyTrendsPanel: React.FC = () => {
         return allPeriods.map(period => {
             const dataPoint: any = { period };
 
+            // Helper to get score for a vendor/period/config
+            const getScore = (vId: string, p: string) => {
+                let vAudits = [];
+                if (activeScorecardId) {
+                    const k = `${vId}-${p}-${activeScorecardId}`;
+                    vAudits = audits[k] || [];
+                } else {
+                    // Fallback only if no global context
+                    vAudits = audits[`${vId}-${p}`] || [];
+                }
+
+                if (vAudits.length > 0) {
+                    const res = calculateScores(vAudits, selectedConfig.categories, selectedConfig.kpis, vId, p);
+                    return Math.round(res.score);
+                }
+                return null;
+            };
+
             // If compareVendorId is 'all', add all vendors
             if (compareVendorId === 'all') {
                 vendors.forEach(vendor => {
-                    const key = `${vendor.id}-${period}`;
-                    const vendorAudits = audits[key] || [];
-                    if (vendorAudits.length > 0) {
-                        const results = calculateScores(vendorAudits, config.categories, config.kpis, vendor.id, period);
-                        dataPoint[vendor.id] = Math.round(results.score);
-                    } else {
-                        dataPoint[vendor.id] = null;
-                    }
+                    dataPoint[vendor.id] = getScore(vendor.id, period);
                 });
             } else {
                 // Main Vendor Data
                 if (selectedVendorId) {
-                    const key = `${selectedVendorId}-${period}`;
-                    const vendorAudits = audits[key] || [];
-                    if (vendorAudits.length > 0) {
-                        const results = calculateScores(vendorAudits, config.categories, config.kpis, selectedVendorId, period);
-                        dataPoint[selectedVendorId] = Math.round(results.score);
-                    } else {
-                        dataPoint[selectedVendorId] = null;
-                    }
+                    dataPoint[selectedVendorId] = getScore(selectedVendorId, period);
                 }
 
                 // Comparison Vendor Data
                 if (compareVendorId !== 'none') {
-                    const key = `${compareVendorId}-${period}`;
-                    const vendorAudits = audits[key] || [];
-                    if (vendorAudits.length > 0) {
-                        const results = calculateScores(vendorAudits, config.categories, config.kpis, compareVendorId, period);
-                        dataPoint[compareVendorId] = Math.round(results.score);
-                    } else {
-                        dataPoint[compareVendorId] = null;
-                    }
+                    dataPoint[compareVendorId] = getScore(compareVendorId, period);
                 }
             }
 
             return dataPoint;
         });
-    }, [allPeriods, selectedVendorId, compareVendorId, audits, config, vendors]);
+    }, [allPeriods, selectedVendorId, compareVendorId, audits, selectedConfig, vendors, activeScorecardId]);
 
     // Calculate Stats for Main Vendor
     const stats = useMemo(() => {
@@ -110,7 +121,9 @@ export const MonthlyTrendsPanel: React.FC = () => {
     return (
         <div className="space-y-8 animate-in fade-in pb-20">
             {/* Vendor Selectors */}
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-3">
+                {/* Removed Local Model Selector */}
+
                 <div className="flex flex-wrap items-center gap-4 bg-slate-900 p-2 rounded-2xl border border-slate-700">
                     <div className="px-4">
                         <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block mb-1">Analyze Vendor</label>
@@ -217,6 +230,7 @@ export const MonthlyTrendsPanel: React.FC = () => {
                                             fillOpacity={1}
                                             fill={`url(#color${v.id})`}
                                             activeDot={{ r: 6, strokeWidth: 0 }}
+                                            dot={{ r: 4, fill: color, strokeWidth: 2, stroke: '#fff' }}
                                         />
                                     );
                                 })
@@ -232,6 +246,8 @@ export const MonthlyTrendsPanel: React.FC = () => {
                                         fillOpacity={1}
                                         fill="url(#colorMain)"
                                         activeDot={{ r: 6, strokeWidth: 0 }}
+                                        dot={{ r: 4, fill: selectedVendor?.color || '#FFD700', strokeWidth: 2, stroke: '#fff' }}
+                                        label={{ position: 'top', fill: '#64748B', fontSize: 12, fontWeight: 'bold', formatter: (v: number) => `${v}%` }}
                                     />
 
                                     {compareVendorId !== 'none' && (
@@ -244,6 +260,8 @@ export const MonthlyTrendsPanel: React.FC = () => {
                                             fillOpacity={1}
                                             fill="url(#colorCompare)"
                                             activeDot={{ r: 6, strokeWidth: 0 }}
+                                            dot={{ r: 4, fill: compareVendor?.color || '#FFD700', strokeWidth: 2, stroke: '#fff' }}
+                                            label={{ position: 'top', fill: '#64748B', fontSize: 12, fontWeight: 'bold', formatter: (v: number) => `${v}%` }}
                                         />
                                     )}
                                 </>

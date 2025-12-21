@@ -11,10 +11,11 @@ import { v4 as uuidv4 } from 'uuid';
 import clsx from 'clsx';
 import { Lock, ChevronRight, ChevronLeft, CheckCircle2, ShieldAlert, Paperclip, X, FileText, RotateCcw, Loader2, Save, Check, Undo, Redo, LogOut } from 'lucide-react';
 import { indexedDBService } from '../services/indexedDB.service';
+import { scorecardConfigService } from '../services/scorecard-config.service';
 
 export const AuditPage: React.FC = () => {
     const { categoryId } = useParams<{ categoryId: string }>();
-    const { config, audits, updateAudit, currentVendorId, currentPeriod, clearAudit, setAuditsForKey, startedAudits, startAudit, setAuditStatus, auditStatus, calculateScore, vendors } = useApp();
+    const { config, audits, updateAudit, currentVendorId, currentPeriod, currentConfigId, clearAudit, setAuditsForKey, startedAudits, startAudit, setAuditStatus, auditStatus, auditConfigs, calculateScore, vendors } = useApp();
     const { showToast } = useToast();
     const navigate = useNavigate();
     const [validationError, setValidationError] = React.useState<string | null>(null);
@@ -149,12 +150,47 @@ export const AuditPage: React.FC = () => {
     };
 
     // Load scorecard configuration for this audit (dynamic)
-    const scorecardConfig = config;
+    const scorecardConfig = React.useMemo(() => {
+        // Priority 0: Current Config ID from Context (explicit selection)
+        if (currentConfigId) {
+            const specificConfig = scorecardConfigService.getConfig(currentConfigId);
+            if (specificConfig) return specificConfig;
+        }
+
+        const key = `${currentVendorId}-${currentPeriod}`;
+
+        // Priority 1: Check auditConfigs (Legacy/Fallback)
+        if (auditConfigs && auditConfigs[key]) {
+            const specificConfig = scorecardConfigService.getConfig(auditConfigs[key]);
+            if (specificConfig) return specificConfig;
+        }
+
+        // Priority 2: Check existing audits (Legacy fallback)
+        const currentAudits = audits[key];
+        if (currentAudits && currentAudits.length > 0) {
+            const configId = currentAudits[0].scorecardConfigId;
+            if (configId) {
+                const specificConfig = scorecardConfigService.getConfig(configId);
+                if (specificConfig) return specificConfig;
+            }
+        }
+        return config;
+    }, [config, audits, auditConfigs, currentVendorId, currentPeriod, currentConfigId]);
 
     const category = scorecardConfig.categories.find(c => c.id === categoryId);
     const categoryKpis = scorecardConfig.kpis.filter(k => k.categoryId === categoryId);
 
-    const isAuditStarted = startedAudits[`${currentVendorId}-${currentPeriod}`];
+    // Validate category and redirect if invalid (e.g. when switching models)
+    useEffect(() => {
+        if (!category && scorecardConfig.categories.length > 0) {
+            // If current category doesn't exist in this config, redirect to the first one
+            navigate(`/audit/${scorecardConfig.categories[0].id}`, { replace: true });
+        }
+    }, [category, scorecardConfig, navigate]);
+
+    const isAuditStarted = currentConfigId
+        ? startedAudits[`${currentVendorId}-${currentPeriod}-${currentConfigId}`]
+        : startedAudits[`${currentVendorId}-${currentPeriod}`];
 
     // Calculate scores for the header
     const scores = calculateScore(currentVendorId, currentPeriod);
@@ -195,7 +231,10 @@ export const AuditPage: React.FC = () => {
     }
 
     const getAuditEntry = (kpiId: string) => {
-        const key = `${currentVendorId}-${currentPeriod}`;
+        const key = currentConfigId
+            ? `${currentVendorId}-${currentPeriod}-${currentConfigId}`
+            : `${currentVendorId}-${currentPeriod}`;
+
         const currentAudits = audits[key] || [];
         const existing = currentAudits.find(a => a.kpiId === kpiId);
 
@@ -204,6 +243,7 @@ export const AuditPage: React.FC = () => {
             period: currentPeriod,
             categoryId: category.id,
             kpiId,
+            scorecardConfigId: currentConfigId || (auditConfigs?.[key] || ''), // CRITICAL: Propagate config ID to new entries
             auditsDone: 0,
             auditsMet: 0,
             auditsMissed: 0,
@@ -391,76 +431,52 @@ export const AuditPage: React.FC = () => {
             const entry = getAuditEntry(kpi.id);
             let score: number;
 
-            if (kpi.id === '1.3') {
-                // Special handling for attrition rate KPI
-                // For attrition: met = Total Dropped, done = Total Started
-                // Attrition Rate = (Total Dropped / Total Started) * 100
-                // If attrition rate ≤ 15% → PASS (score 100)
-                // If attrition rate > 15% → FAIL (score 0)
-                // BUT if binary input is used (Pass/Fail buttons):
-                // entry.auditsMet will be 1 for PASS button, 0 for FAIL button
-                // So we use binary logic directly
-                if (entry.auditsDone === 1) {
-                    // Binary input mode (Pass/Fail buttons)
-                    // auditsMet = 1 means PASS, auditsMet = 0 means FAIL
-                    score = entry.auditsMet === 1 ? 100 : 0;
-                } else {
-                    // Numeric input mode (actual counts)
-                    const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                    score = attritionRate <= 15 ? 100 : 0;
-                }
+
+            if (entry.auditsDone === 0) {
+                score = 100;
             } else {
-                const percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                const percentage = (entry.auditsMet / entry.auditsDone) * 100;
                 score = calculateComplianceScore(percentage, kpi); // Pass full KPI object
             }
+
 
             totalWeight += kpi.weight;
             weightedScore += score * kpi.weight;
         });
 
-        const categoryScore = totalWeight > 0 ? weightedScore / totalWeight : 0;
 
-        // Only require comments if the entire pillar (category) scored < 100%
-        if (categoryScore < 100) {
-            const missingComments: { kpi: string; score: number }[] = [];
+        // Check each KPI for missing comments regardless of category score
+        const missingComments: { kpi: string; score: number }[] = [];
 
-            // Check each KPI for missing comments and track their scores
-            categoryKpis.forEach(kpi => {
-                const entry = getAuditEntry(kpi.id);
+        // Check each KPI for missing comments and track their scores
+        categoryKpis.forEach(kpi => {
+            const entry = getAuditEntry(kpi.id);
 
-                // Calculate individual KPI score
-                let kpiScore: number;
+            // Calculate individual KPI score
+            let kpiScore: number;
 
-                if (kpi.id === '1.3') {
-                    // Special handling for attrition rate
-                    if (entry.auditsDone === 1) {
-                        // Binary input mode
-                        kpiScore = entry.auditsMet === 1 ? 100 : 0;
-                    } else {
-                        // Numeric input mode
-                        const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                        kpiScore = attritionRate <= 15 ? 100 : 0;
-                    }
-                } else {
-                    const percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                    kpiScore = calculateComplianceScore(percentage, kpi); // Pass full KPI object
-                }
 
-                // If this KPI scored < 100% and has no comment, flag it
-                if (kpiScore < 100 && !entry.commentsForMissed?.trim()) {
-                    missingComments.push({ kpi: kpi.label, score: Math.round(kpiScore) });
-                }
-            });
-
-            if (missingComments.length > 0) {
-                const categoryName = config.categories.find(c => c.id === category.id)?.label || 'this category';
-                const commentsList = missingComments.map(item => `${item.kpi} (${item.score}%)`).join(', ');
-                setValidationError(
-                    `This pillar scored ${Math.round(categoryScore)}% (below 100%). Please provide comments for: ${commentsList}`
-                );
-                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-                return false;
+            if (entry.auditsDone === 0) {
+                kpiScore = 100;
+            } else {
+                const percentage = (entry.auditsMet / entry.auditsDone) * 100;
+                kpiScore = calculateComplianceScore(percentage, kpi); // Pass full KPI object
             }
+
+            // If this KPI scored < 100% and has no comment, flag it
+            if (kpiScore < 100 && !entry.commentsForMissed?.trim()) {
+                missingComments.push({ kpi: kpi.label, score: Math.round(kpiScore) });
+            }
+        });
+
+        if (missingComments.length > 0) {
+            const categoryName = config.categories.find(c => c.id === category.id)?.label || 'this category';
+            const commentsList = missingComments.map(item => `${item.kpi} (${item.score}%)`).join(', ');
+            setValidationError(
+                `One or more KPIs are below 100%. Please provide comments for: ${commentsList}`
+            );
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+            return false;
         }
 
         setValidationError(null);
@@ -470,27 +486,42 @@ export const AuditPage: React.FC = () => {
     const handleNext = () => {
         if (!validateCategory()) return;
 
-        const currentIndex = config.categories.findIndex(c => c.id === categoryId);
-        if (currentIndex < config.categories.length - 1) {
-            const nextCategory = config.categories[currentIndex + 1];
+        // Use scorecardConfig instead of global config to support multi-model navigation
+        const currentIndex = scorecardConfig.categories.findIndex(c => c.id === categoryId);
+        if (currentIndex < scorecardConfig.categories.length - 1) {
+            const nextCategory = scorecardConfig.categories[currentIndex + 1];
             navigate(`/audit/${nextCategory.id}`);
             window.scrollTo(0, 0);
+        } else {
+            // Only finish if we're at the end of THIS scorecard's flow
+            handleFinish();
         }
     };
 
     const handlePrev = () => {
-        const currentIndex = config.categories.findIndex(c => c.id === categoryId);
+        const currentIndex = scorecardConfig.categories.findIndex(c => c.id === categoryId);
         if (currentIndex > 0) {
-            const prevCategory = config.categories[currentIndex - 1];
+            const prevCategory = scorecardConfig.categories[currentIndex - 1];
             navigate(`/audit/${prevCategory.id}`);
             window.scrollTo(0, 0);
         }
     };
 
-    const isAppealed = auditStatus[`${currentVendorId}-${currentPeriod}`] === 'appealed';
+    const configId = 'id' in scorecardConfig ? (scorecardConfig as any).id : undefined;
+    const isAppealed = (configId && auditStatus[`${currentVendorId}-${currentPeriod}-${configId}`] === 'appealed')
+        || (!configId && auditStatus[`${currentVendorId}-${currentPeriod}`] === 'appealed');
 
     const handleSaveDraft = () => {
         // Save without validation
+        // Use composite key if config is active
+        const configId = 'id' in scorecardConfig ? (scorecardConfig as any).id : undefined;
+        const key = configId
+            ? `${currentVendorId}-${currentPeriod}-${configId}`
+            : `${currentVendorId}-${currentPeriod}`;
+
+        // We need to call setAuditStatus but it expects (vendorId, period, status)
+        // and internally decides key. In AppContext, setAuditStatus uses currentConfigId.
+        // So this is actually fine as-is:
         setAuditStatus(currentVendorId, currentPeriod, 'draft');
         showToast('Draft saved successfully', 'success');
         navigate('/');
@@ -498,10 +529,15 @@ export const AuditPage: React.FC = () => {
 
     const handleFinish = () => {
         // Comprehensive validation before finalization
-        const key = `${currentVendorId}-${currentPeriod}`;
+        // Use the ID from the currently loaded scorecard config to ensure we validate the correct data
+        const configId = 'id' in scorecardConfig ? (scorecardConfig as any).id : undefined;
+        const key = configId
+            ? `${currentVendorId}-${currentPeriod}-${configId}`
+            : `${currentVendorId}-${currentPeriod}`;
+
         const currentAudits = audits[key] || [];
 
-        const validationResult = validateAuditCompletion(currentAudits, config.kpis);
+        const validationResult = validateAuditCompletion(currentAudits, scorecardConfig.kpis);
 
         if (!validationResult.isValid) {
             setValidationErrors(validationResult.errors);
@@ -516,8 +552,8 @@ export const AuditPage: React.FC = () => {
         navigate('/');
     };
 
-    const currentIndex = config.categories.findIndex(c => c.id === categoryId);
-    const isLastCategory = currentIndex === config.categories.length - 1;
+    const currentIndex = scorecardConfig.categories.findIndex(c => c.id === categoryId);
+    const isLastCategory = currentIndex === scorecardConfig.categories.length - 1;
 
     return (
         <div className="space-y-6 pb-20 animate-in fade-in">
@@ -611,20 +647,11 @@ export const AuditPage: React.FC = () => {
                     let score: number;
                     let percentage: number;
 
-                    if (kpi.id === '1.3') {
-                        // Special handling for attrition rate
-                        if (entry.auditsDone === 1) {
-                            // Binary input mode
-                            score = entry.auditsMet === 1 ? 100 : 0;
-                            percentage = entry.auditsMet === 1 ? 0 : 100; // For display
-                        } else {
-                            // Numeric input mode
-                            const attritionRate = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
-                            score = attritionRate <= 15 ? 100 : 0;
-                            percentage = attritionRate;
-                        }
+                    if (entry.auditsDone === 0) {
+                        percentage = 0;
+                        score = 100;
                     } else {
-                        percentage = entry.auditsDone > 0 ? (entry.auditsMet / entry.auditsDone) * 100 : 0;
+                        percentage = (entry.auditsMet / entry.auditsDone) * 100;
                         score = calculateComplianceScore(percentage, kpi); // Pass full KPI object
                     }
                     const rag = getRagColor(score);

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keeta BPO Scorecard — High-Level Overview</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+            color: #1a202c;
+        }
+
+        header {
+            margin-bottom: 2rem;
+            border-bottom: 3px solid #3182ce;
+            padding-bottom: 1rem;
+        }
+
+        h1 {
+            color: #2d3748;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: #718096;
+            font-size: 1.1rem;
+        }
+
+        h2 {
+            color: #2b6cb0;
+            margin-top: 2.5rem;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+        }
+
+        h3 {
+            color: #2d3748;
+            margin-top: 1.5rem;
+        }
+
+        ul {
+            margin-bottom: 1rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            width: 100%;
+        }
+
+        th,
+        td {
+            border: 1px solid #e2e8f0;
+            padding: 0.75rem;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f7fafc;
+            color: #4a5568;
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background-color: #fcfcfc;
+        }
+
+        .box {
+            background: #f8fbff;
+            border-left: 4px solid #4299e1;
+            padding: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .alert {
+            background: #fff5f5;
+            border-left: 4px solid #e53e3e;
+            padding: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        strong {
+            color: #2c5282;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>Keeta BPO Scorecard — High-Level Overview</h1>
+        <div class="subtitle"><strong>Target Audience:</strong> Product Managers, Directors, Stakeholders</div>
+    </header>
+
+    <section>
+        <h2>1. High-Level System Architecture</h2>
+        <p>The <strong>Keeta BPO Scorecard</strong> is a <strong>Progressive Web Application (PWA)</strong> designed to
+            standardise how BPO vendors are audited and evaluated. It operates effectively as a "smart spreadsheet" with
+            a powerful visual layer, currently running entirely within the user's browser.</p>
+
+        <div class="box">
+            <h3>Core Concept</h3>
+            <p>Think of the application as a <strong>self-contained evaluation tool</strong>. Instead of sending data
+                back and forth to a central server for every click, the application loads once and handles all
+                calculations, data storage, and report generation instantly on the user's device.</p>
+        </div>
+
+        <h3>Major Components</h3>
+        <ol>
+            <li><strong>Dashboard Area:</strong> Provides instant feedback on vendor performance (RAG status:
+                Red/Amber/Green).</li>
+            <li><strong>Audit Interface:</strong> A digital form where Regional Training Managers input performance data
+                against specific Categories and KPIs.</li>
+            <li><strong>Calculation Engine:</strong> An "invisible brain" that instantly computes complex weighted
+                scores as data is entered.</li>
+            <li><strong>Admin/Configuration Panel:</strong> Allows authorised users to change the "Rules of the
+                Game"—weightings, KPI definitions, and scoring targets—without needing a developer.</li>
+            <li><strong>Report Generator:</strong> Creates PDF exports and visual charts for Monthly Business Reviews
+                (MBR).</li>
+        </ol>
+
+        <h3>How Data Flows</h3>
+        <ul>
+            <li><strong>Configuration:</strong> The "Rules" (KPIs, Weights) are loaded.</li>
+            <li><strong>User Input:</strong> The Manager selects a Vendor and Period, then enters "Actual" vs "Target"
+                numbers.</li>
+            <li><strong>Scoring:</strong> The system calculates the score in real-time (e.g., <em>98% Compliance = 100
+                    Points</em> or <em>Fail = 0 Points</em>).</li>
+            <li><strong>Storage:</strong> Data is saved locally to the browser's secure storage.</li>
+            <li><strong>Output:</strong> Dashboards update immediately; PDFs can be downloaded for email distribution.
+            </li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>2. Tech Stack Summary</h2>
+        <p>The technology choices prioritise <strong>speed</strong>, <strong>portability</strong>, and <strong>modern
+                user experience</strong>.</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Component</th>
+                    <th>Technology</th>
+                    <th>Why it was chosen</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Frontend Framework</strong></td>
+                    <td><strong>React + TypeScript</strong></td>
+                    <td>The industry standard for building interactive, complex user interfaces. Ensures type safety and
+                        few bugs.</td>
+                </tr>
+                <tr>
+                    <td><strong>Styling</strong></td>
+                    <td><strong>Tailwind CSS</strong></td>
+                    <td>Allows for a modern, clean, "SaaS-like" aesthetic that is mobile-responsive.</td>
+                </tr>
+                <tr>
+                    <td><strong>Charting</strong></td>
+                    <td><strong>Recharts</strong></td>
+                    <td>Renders professional-grade trend lines and bar charts for the dashboards.</td>
+                </tr>
+                <tr>
+                    <td><strong>Application Logic</strong></td>
+                    <td><strong>Node.js (Compatible)</strong></td>
+                    <td>The logic is written in JavaScript/TypeScript, making it easy to move to a backend server later
+                        if needed.</td>
+                </tr>
+                <tr>
+                    <td><strong>Storage (Current)</strong></td>
+                    <td><strong>Local Storage + IndexedDB</strong></td>
+                    <td><strong>No Database Required.</strong> Allows the app to work offline or without a server setup.
+                        Uses IndexedDB for large file attachments.</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section>
+        <h2>3. What the System Does</h2>
+
+        <h3>The Problem It Solves</h3>
+        <p>Previously, audits might have been done in disparate Excel sheets, leading to version control issues, broken
+            formulas, and inconsistent reporting. This tool <strong>standardises the source of truth</strong>.</p>
+
+        <h3>Key Workflows</h3>
+        <ul>
+            <li><strong>Audits:</strong> A user selects a vendor (e.g., "Teleperformance") and a month (e.g., "Oct
+                2023"). They walk through defined "Pillars" (Training, Compliance, etc.) and mark items as Done/Met or
+                Pass/Fail.</li>
+            <li><strong>Scoring Logic:</strong> The system handles the complex math. It understands that:
+                <ul>
+                    <li>Some KPIs are <strong>Linear</strong> (85% achievement = 85 points).</li>
+                    <li>Some are <strong>Binary</strong> (Pass/Fail = 100 or 0 points).</li>
+                    <li>Some are <strong>Inverse</strong> (Lower attrition is better).</li>
+                </ul>
+            </li>
+            <li><strong>Category Weighting:</strong> If a Category is worth 20% of the total score, the system
+                automatically scales the KPIs within it to equal that 20%.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>4. What is Customizable?</h2>
+        <p>The system is designed to be highly flexible via the <strong>Configuration Panel</strong>:</p>
+        <ul>
+            <li><strong>KPI Definitions:</strong> You can add, remove, or rename KPIs.</li>
+            <li><strong>Weighting:</strong> You can adjust a category's importance (e.g., change "Training Delivery"
+                from 30% to 40%). The system validates that totals equal 100%.</li>
+            <li><strong>Scoring Logic:</strong> You can switch a KPI from "Standard Percentage" to "Pass/Fail" logic
+                without writing code.</li>
+            <li><strong>Vendor List:</strong> Vendors are not hardcoded; you can manage the list dynamically.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>5. Integration Strategy & Missing Features</h2>
+        <p>Currently, the system is <strong>Standalone</strong>. To integrate it into the corporate platform, we need to
+            "unplug" the local storage and "plug in" a centralised database.</p>
+
+        <div class="alert">
+            <h3>Critical Missing Components: Authentication</h3>
+            <p><strong>There is currently NO real sign-in or registration process.</strong> The application simulates a
+                login with data stored in your browser.</p>
+            <p>We must implement:</p>
+            <ul>
+                <li><strong>Registration Flow:</strong> A page for new users (e.g., vendor focal points) to sign up.
+                </li>
+                <li><strong>Sign-In Validation:</strong> A backend service to verify passwords securely.</li>
+                <li><strong>Access Control:</strong> Locking down editing rights so Vendors can only <em>see</em> their
+                    scores, while Managers can <em>edit</em> them.</li>
+            </ul>
+        </div>
+
+        <h3>Integration Path</h3>
+        <ol>
+            <li><strong>Frontend (Portable):</strong> The UI (React) is ready to deploy. It can be hosted on any web
+                server, Sharepoint page, or Azure Static Web App.</li>
+            <li><strong>Data Storage (The Change Required):</strong>
+                <ul>
+                    <li><strong>Current:</strong> Uses User's Browser Memory.</li>
+                    <li><strong>Target:</strong> Needs to connect to an API (Node.js) or SharePoint Lists.</li>
+                </ul>
+            </li>
+            <li><strong>Authentication:</strong> Needs integration with <strong>SSO (Single Sign-On)</strong> or Azure
+                Active Directory for security.</li>
+        </ol>
+    </section>
+
+</body>
+
+</html>

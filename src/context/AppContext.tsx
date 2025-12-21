@@ -16,23 +16,28 @@ interface AppState {
     startedAudits: Record<string, boolean>; // Key: vendorId-period
     editingAudits: Record<string, boolean>; // Key: vendorId-period
     auditStatus: Record<string, 'draft' | 'finalized' | 'appealed'>; // Key: vendorId-period
+    activeScorecardId: string; // NEW: The primary context
+    setActiveScorecardId: (id: string) => void; // NEW
+    auditConfigs: Record<string, string>; // Key: vendorId-period -> configId
     currentVendorId: string;
     currentPeriod: string;
+    currentConfigId: string | undefined; // NEW: Track specific config
     setVendor: (id: string) => void;
     setVendorId: (id: string) => void;
     setPeriod: (period: string) => void;
-    startAudit: (vendorId: string, period: string) => void;
+    setConfigId: (id: string) => void; // NEW
+    startAudit: (vendorId: string, period: string, configId?: string) => void;
     markAsEditing: (vendorId: string, period: string) => void;
     setAuditStatus: (vendorId: string, period: string, status: 'draft' | 'finalized' | 'appealed') => void;
     setAuditsForKey: (vendorId: string, period: string, entries: AuditEntry[]) => void;
     updateAudit: (audit: AuditEntry) => void;
-    clearAudit: (vendorId: string, period: string) => void;
-    deleteAudit: (vendorId: string, period: string) => void;
+    clearAudit: (vendorId: string, period: string, configId?: string) => void;
+    deleteAudit: (vendorId: string, period: string, configId?: string) => void;
     saveConfig: (config: AppConfig) => void;
     resetConfig: () => void;
     exportData: () => string;
     importData: (json: string) => boolean;
-    calculateScore: (vendorId: string, period: string) => any;
+    calculateScore: (vendorId: string, period: string, configId?: string) => any;
     // Vendor management
     addVendor: (name: string, metadata?: { color?: string; region?: string; logo?: string }) => Vendor;
     updateVendor: (id: string, updates: { name?: string; color?: string; region?: string; logo?: string }) => Vendor;
@@ -53,14 +58,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         try {
             // CRITICAL FIX: Load from active scorecard configuration instead of defaults
             const activeConfigs = scorecardConfigService.getActiveConfigs();
+            const savedId = localStorage.getItem('activeScorecardId');
 
-            if (activeConfigs.length > 0) {
-                // Use the first active scorecard configuration
-                const activeConfig = activeConfigs[0];
-                console.log(`✅ Loaded active scorecard: ${activeConfig.name}`);
+            // Determine which config to load
+            let configToLoad = activeConfigs.length > 0 ? activeConfigs[0] : null;
+
+            if (savedId) {
+                const specific = activeConfigs.find(c => c.id === savedId);
+                if (specific) configToLoad = specific;
+            }
+
+            if (configToLoad) {
+                console.log(`✅ Loaded active scorecard: ${configToLoad.name} (${configToLoad.id})`);
                 return {
-                    categories: activeConfig.categories,
-                    kpis: activeConfig.kpis
+                    categories: configToLoad.categories,
+                    kpis: configToLoad.kpis
                 };
             }
 
@@ -125,12 +137,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     });
 
+    const [auditConfigs, setAuditConfigs] = useState<Record<string, string>>(() => {
+        try {
+            const saved = localStorage.getItem('auditConfigs');
+            return saved ? JSON.parse(saved) : {};
+        } catch (e) {
+            console.error('Failed to load auditConfigs', e);
+            return {};
+        }
+    });
+
     const [currentVendorId, setCurrentVendorId] = useState<string>(() => {
         return localStorage.getItem('currentVendorId') || vendors[0]?.id || '';
     });
 
     const [currentPeriod, setCurrentPeriod] = useState<string>(() => {
         return localStorage.getItem('currentPeriod') || new Date().toISOString().slice(0, 7);
+    });
+
+    const [currentConfigId, setCurrentConfigId] = useState<string | undefined>(undefined);
+
+    // NEW: Active Scorecard Context
+    const [activeScorecardId, setActiveScorecardIdState] = useState<string>(() => {
+        const saved = localStorage.getItem('activeScorecardId');
+        // Default to first available if none saved, or keep saved
+        const configs = scorecardConfigService.getActiveConfigs();
+        if (saved && configs.find(c => c.id === saved)) return saved;
+        return configs.length > 0 ? configs[0].id : '';
     });
 
     // Persist changes
@@ -155,6 +188,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, [auditStatus]);
 
     useEffect(() => {
+        localStorage.setItem('auditConfigs', JSON.stringify(auditConfigs));
+    }, [auditConfigs]);
+
+    useEffect(() => {
         localStorage.setItem('currentVendorId', currentVendorId);
     }, [currentVendorId]);
 
@@ -162,27 +199,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         localStorage.setItem('currentPeriod', currentPeriod);
     }, [currentPeriod]);
 
+    useEffect(() => {
+        localStorage.setItem('activeScorecardId', activeScorecardId);
+    }, [activeScorecardId]);
+
     const setVendor = useCallback((id: string) => setCurrentVendorId(id), []);
     const setVendorId = useCallback((id: string) => setCurrentVendorId(id), []);
     const setPeriod = useCallback((period: string) => setCurrentPeriod(period), []);
+    const setConfigId = useCallback((id: string) => setCurrentConfigId(id), []);
 
     // CRITICAL FIX: Reload config from active scorecard
     const reloadConfig = useCallback(() => {
         try {
             const activeConfigs = scorecardConfigService.getActiveConfigs();
+            // Use current activeScorecardId
+            const targetId = activeScorecardId;
+            const configToLoad = activeConfigs.find(c => c.id === targetId) || activeConfigs[0];
 
-            if (activeConfigs.length > 0) {
-                const activeConfig = activeConfigs[0];
-                console.log(`🔄 Reloading config from: ${activeConfig.name}`);
+            if (configToLoad) {
+                console.log(`🔄 Reloading config from: ${configToLoad.name}`);
                 setConfig({
-                    categories: activeConfig.categories,
-                    kpis: activeConfig.kpis
+                    categories: configToLoad.categories,
+                    kpis: configToLoad.kpis
                 });
             } else {
                 console.warn('⚠️ No active scorecard found during reload');
             }
         } catch (error) {
             console.error('❌ Failed to reload config:', error);
+        }
+    }, [activeScorecardId]);
+
+    const setActiveScorecardId = useCallback((id: string) => {
+        setActiveScorecardIdState(id);
+        // We will let the effect or reloadConfig handle the implementation update
+        // But for immediate response we can trigger reload logic here too
+        const config = scorecardConfigService.getConfig(id);
+        if (config) {
+            setConfig({
+                categories: config.categories,
+                kpis: config.kpis
+            });
         }
     }, []);
 
@@ -197,9 +254,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return () => window.removeEventListener('scorecard-saved', handleScorecardSaved);
     }, [reloadConfig]);
 
-    const startAudit = useCallback((vendorId: string, period: string) => {
-        const key = `${vendorId}-${period}`;
+    const startAudit = useCallback((vendorId: string, period: string, configId?: string) => {
+        // Use composite key if configId matches the new pattern
+        const key = configId ? `${vendorId}-${period}-${configId}` : `${vendorId}-${period}`;
+
         setStartedAudits(prev => ({ ...prev, [key]: true }));
+
+        if (configId) {
+            // New logic: Set the current config context
+            setCurrentConfigId(configId);
+
+            const selectedConfig = scorecardConfigService.getConfig(configId);
+            if (selectedConfig) {
+                console.log(`✅ Audit started with config: ${selectedConfig.name}`);
+                setConfig({
+                    categories: selectedConfig.categories,
+                    kpis: selectedConfig.kpis
+                });
+            }
+        }
     }, []);
 
     const markAsEditing = useCallback((vendorId: string, period: string) => {
@@ -208,12 +281,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     const setAuditStatus = useCallback((vendorId: string, period: string, status: 'draft' | 'finalized' | 'appealed') => {
-        const key = `${vendorId}-${period}`;
+        // Try current config first, then fallback to composite or legacy
+        const key = currentConfigId
+            ? `${vendorId}-${period}-${currentConfigId}`
+            : `${vendorId}-${period}`;
+
         setAuditStatusState(prev => ({ ...prev, [key]: status }));
-    }, []);
+    }, [currentConfigId]);
 
     const updateAudit = useCallback((entry: AuditEntry) => {
-        const key = `${entry.vendorId}-${entry.period}`;
+        // Determine key: prioritizes entry.scorecardConfigId for uniqueness
+        const key = entry.scorecardConfigId
+            ? `${entry.vendorId}-${entry.period}-${entry.scorecardConfigId}`
+            : `${entry.vendorId}-${entry.period}`;
+
         setAudits(prev => {
             const currentAudits = prev[key] || [];
             const existingIndex = currentAudits.findIndex(a => a.kpiId === entry.kpiId);
@@ -231,12 +312,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }, []);
 
     const setAuditsForKey = useCallback((vendorId: string, period: string, entries: AuditEntry[]) => {
-        const key = `${vendorId}-${period}`;
+        // Try to infer configId from entries
+        const configId = entries.length > 0 ? entries[0].scorecardConfigId : currentConfigId;
+        const key = configId ? `${vendorId}-${period}-${configId}` : `${vendorId}-${period}`;
         setAudits(prev => ({ ...prev, [key]: entries }));
-    }, []);
+    }, [currentConfigId]);
 
-    const clearAudit = useCallback((vendorId: string, period: string) => {
-        const key = `${vendorId}-${period}`;
+    const clearAudit = useCallback((vendorId: string, period: string, configId?: string) => {
+        // Determine the primary key for data deletion
+        const key = configId
+            ? `${vendorId}-${period}-${configId}`
+            : `${vendorId}-${period}`;
+
+        console.log(`🗑️ Deleting audit with key: ${key} (ConfigId: ${configId})`);
+
+        // Legacy key is used for auditConfigs mapping (vendor-period -> active config)
+        const legacyKey = `${vendorId}-${period}`;
+
         setAudits(prev => {
             const next = { ...prev };
             delete next[key];
@@ -245,23 +337,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setStartedAudits(prev => {
             const next = { ...prev };
             delete next[key];
+            // Also try legacy key just in case
+            if (configId) delete next[legacyKey];
             return next;
         });
         setEditingAudits(prev => {
             const next = { ...prev };
             delete next[key];
+            if (configId) delete next[legacyKey];
             return next;
         });
         setAuditStatusState(prev => {
             const next = { ...prev };
             delete next[key];
+            if (configId) delete next[legacyKey];
             localStorage.setItem('auditStatus', JSON.stringify(next));
             return next;
         });
-    }, []);
+        setAuditConfigs(prev => {
+            const next = { ...prev };
+            // Ensure we remove the mapping for this period, which uses the legacy key
+            delete next[legacyKey];
+            // Also try the composite key just in case it was stored that way erroneously
+            delete next[key];
+            localStorage.setItem('auditConfigs', JSON.stringify(next));
+            return next;
+        });
 
-    const deleteAudit = useCallback((vendorId: string, period: string) => {
-        clearAudit(vendorId, period);
+        // Clear current config ID if it matches the one being deleted
+        if (configId && currentConfigId === configId) {
+            setCurrentConfigId(undefined);
+        }
+    }, [currentConfigId]);
+
+    const deleteAudit = useCallback((vendorId: string, period: string, configId?: string) => {
+        clearAudit(vendorId, period, configId);
     }, [clearAudit]);
 
     const saveConfig = useCallback((newConfig: AppConfig) => {
@@ -290,7 +400,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (data.config) setConfig(data.config);
             if (data.audits) setAudits(data.audits);
             if (data.startedAudits) setStartedAudits(data.startedAudits);
+            if (data.editingAudits) setEditingAudits(data.editingAudits || {}); // Add fallback
             if (data.auditStatus) setAuditStatusState(data.auditStatus);
+            if (data.auditConfigs) setAuditConfigs(data.auditConfigs);
             if (data.vendors) {
                 vendorService.importVendors(JSON.stringify(data.vendors));
                 setVendors(vendorService.getActiveVendors());
@@ -302,11 +414,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     }, []);
 
-    const calculateScore = useCallback((vendorId: string, period: string) => {
-        const key = `${vendorId}-${period}`;
-        const vendorAudits = audits[key] || [];
-        return calculateScores(vendorAudits, config.categories, config.kpis, vendorId, period);
-    }, [audits, config.categories, config.kpis]);
+    const calculateScore = useCallback((vendorId: string, period: string, overrideConfigId?: string) => {
+        // Determine which key to use
+        // If override provided, use it.
+        // If not, check if we have a currentConfigId active.
+        // If not, try legacy key.
+        const targetConfigId = overrideConfigId || currentConfigId;
+
+        let key = targetConfigId ? `${vendorId}-${period}-${targetConfigId}` : `${vendorId}-${period}`;
+        let vendorAudits = audits[key] || [];
+
+        // Fallback: If no audits found with composite key, check legacy key
+        if (vendorAudits.length === 0 && !targetConfigId) {
+            key = `${vendorId}-${period}`;
+            vendorAudits = audits[key] || [];
+        }
+
+        // CRITICAL: Use the config associated with these audits, not the global config
+        let scoringCategories = config.categories;
+        let scoringKpis = config.kpis;
+
+        // Try to find the config definition
+        const usedConfigId = targetConfigId || (vendorAudits.length > 0 ? vendorAudits[0].scorecardConfigId : undefined);
+
+        if (usedConfigId) {
+            const auditConfig = scorecardConfigService.getConfig(usedConfigId);
+            if (auditConfig) {
+                scoringCategories = auditConfig.categories;
+                scoringKpis = auditConfig.kpis;
+            }
+        }
+
+        return calculateScores(vendorAudits, scoringCategories, scoringKpis, vendorId, period);
+    }, [audits, config, currentConfigId]);
 
     // Vendor management functions
     const addVendor = useCallback((name: string, metadata?: { color?: string; region?: string; logo?: string }) => {
@@ -336,11 +476,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             startedAudits,
             editingAudits,
             auditStatus,
+            auditConfigs,
             currentVendorId,
             currentPeriod,
+            currentConfigId, // NEW
+            activeScorecardId, // NEW
+            setActiveScorecardId, // NEW
             setVendor,
             setVendorId,
             setPeriod,
+            setConfigId, // NEW
             reloadConfig,  // NEW: Expose reload function
             startAudit,
             markAsEditing,
@@ -366,10 +511,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             editingAudits,
             auditStatus,
             currentVendorId,
+            auditConfigs,
             currentPeriod,
+            currentConfigId,
+            activeScorecardId,
             setVendor,
             setVendorId,
             setPeriod,
+            setConfigId,
             startAudit,
             markAsEditing,
             setAuditStatus,

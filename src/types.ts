@@ -23,7 +23,8 @@ export interface KPI {
     categoryId: CategoryId;
     label: string;
     description?: string;
-    scoringLogic?: 'standard' | 'inverse' | 'binary'; // Default 'standard'
+    scoringLogic?: 'standard' | 'inverse' | 'binary' | 'linear' | 'threshold' | 'custom-bands' | 'formula'; // Extended logic types
+    scoringConfig?: any; // To avoid circular dependency with config.types.ts, we use any or we could move types.
     labels?: {
         done: string; // e.g., "Total Headcount"
         met: string;  // e.g., "Dropped Agents"
@@ -77,6 +78,8 @@ export interface ScorecardConfig {
     createdAt: string;       // ISO timestamp
     updatedAt: string;       // ISO timestamp
     isActive: boolean;       // Whether this config is available for selection
+    tier?: 'tier1' | 'tier2' | 'custom'; // Tier classification
+    isDefault?: boolean;     // Whether this is a system default
 
     // The actual configuration
     categories: Category[];

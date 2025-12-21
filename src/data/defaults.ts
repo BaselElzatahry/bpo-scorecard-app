@@ -1,187 +1,19 @@
-import { AppConfig, Category, KPI } from '../types';
+import { AppConfig, Category, KPI, ScorecardConfig } from '../types';
 
 export const DEFAULT_CATEGORIES: Category[] = [
-    { id: 'trainingDelivery', label: 'Training Delivery', weight: 25 },
-    { id: 'toolsReadiness', label: 'Tools & Access Readiness', weight: 10 },
-    { id: 'trackerCompliance', label: 'Tracker Management Compliance', weight: 10 },
-    { id: 'wbrs', label: 'WBRs', weight: 20 },
-    { id: 'trainingPerformance', label: 'Training Performance', weight: 25 },
-    { id: 'vendorBehavior', label: 'Vendor Management Behavior', weight: 10 },
+    { id: 'PlaceHolder', label: 'PlaceHolder', weight: 100 },
 ];
 
 export const DEFAULT_KPIS: KPI[] = [
-    // 1. Training Delivery (25%)
+    // 1. Test KPI
     {
         id: '1.1',
-        categoryId: 'trainingDelivery',
-        label: '1.1 Training Completion (NH & Upskill)',
-        weight: 25,
-        description: 'Score = (Training classes completed on time / Total classes planned). Completion is counted only if delivered as per agreed training plan and schedule.',
-        scoringLogic: 'standard',
-        labels: { done: 'Classes Planned', met: 'Classes Completed' }
-    },
-    {
-        id: '1.2',
-        categoryId: 'trainingDelivery',
-        label: '1.2 On-Job Training',
-        weight: 25,
-        description: 'Raw completion = Total number of trainings completed / Total number of trainings requested. A training is counted as complete only if at least 94% of targeted HC attended or were covered.',
-        scoringLogic: 'standard',
-        labels: { done: 'Trainings Requested', met: 'Trainings Completed' }
-    },
-    {
-        id: '1.3',
-        categoryId: 'trainingDelivery',
-        label: '1.3 Attrition Rate',
-        weight: 25,
-        description: 'Attrition rate = Total dropped / Total agents who started training. Score is 100 if attrition rate ≤ 15%, otherwise 0.',
-        scoringLogic: 'binary',
-        labels: { done: 'Total Started Training', met: 'Total Dropped' }
-    },
-    {
-        id: '1.4',
-        categoryId: 'trainingDelivery',
-        label: '1.4 Certification Rate',
-        weight: 25,
-        description: 'Certification rate = Agents who passed certification / Agents who took certification. Vendor passes when certification rate ≥ 95%.',
-        scoringLogic: 'standard',
-        labels: { done: 'Agents Tested', met: 'Agents Passed' }
-    },
-
-    // 2. Tools & Access Readiness (10%)
-    {
-        id: '2.1',
-        categoryId: 'toolsReadiness',
-        label: '2.1 Daxiang Requests',
-        weight: 50,
-        description: 'Score = On time and accurate submissions / Total number of eligible waves. Each eligible wave is counted only if tools were requested on time with correct details.',
-        scoringLogic: 'standard',
-        labels: { done: 'Eligible Waves', met: 'On-Time Submissions' }
-    },
-    {
-        id: '2.2',
-        categoryId: 'toolsReadiness',
-        label: '2.2 Keeservice Access Requests',
-        weight: 50,
-        description: 'Score = On time and accurate submissions / Total number of eligible waves. Same logic as Daxiang, using Keeservice access requests and related communication.',
-        scoringLogic: 'standard',
-        labels: { done: 'Eligible Waves', met: 'On-Time Submissions' }
-    },
-
-    // 3. Tracker Management Compliance (10%)
-    {
-        id: '3.1',
-        categoryId: 'trackerCompliance',
-        label: '3.1 Training Plan',
-        weight: 10,
-        description: 'Score = Accurate, on time submissions / Total number of eligible waves. A submission is counted as compliant when submitted on time and without errors.',
-        scoringLogic: 'standard',
-        labels: { done: 'Eligible Waves', met: 'Compliant Submissions' }
-    },
-    {
-        id: '3.2',
-        categoryId: 'trackerCompliance',
-        label: '3.2 Certification Tracker',
-        weight: 15,
-        description: 'Score = Accurate, on time updates / Total number of eligible waves. Vendor must update all certified waves within 24 hours of certification date.',
-        scoringLogic: 'standard',
-        labels: { done: 'Eligible Waves', met: 'On-Time Updates' }
-    },
-    {
-        id: '3.3',
-        categoryId: 'trackerCompliance',
-        label: '3.3 Training Toolkit',
-        weight: 15,
-        description: 'Score = Passed weekly audits / Total number of audits in the month. Weekly audit checks that wave performance, trainee roster, and trainer roster are up to date.',
-        scoringLogic: 'standard',
-        labels: { done: 'Audits Conducted', met: 'Audits Passed' }
-    },
-    {
-        id: '3.4',
-        categoryId: 'trackerCompliance',
-        label: '3.4 Initiatives Tracker',
-        weight: 15,
-        description: 'Score = Passed weekly audits / Total number of audits in the month. Audit checks that all initiative related trackers are updated on time.',
-        scoringLogic: 'standard',
-        labels: { done: 'Audits Conducted', met: 'Audits Passed' }
-    },
-    {
-        id: '3.5',
-        categoryId: 'trackerCompliance',
-        label: '3.5 SOP Updates',
-        weight: 15,
-        description: 'Score = Updates cascaded on time / Total number of updates within the month. To count as on time, the update must be cascaded, logged in the tracker, and evidence attached.',
-        scoringLogic: 'standard',
-        labels: { done: 'Updates Required', met: 'Updates Cascaded' }
-    },
-    {
-        id: '3.6',
-        categoryId: 'trackerCompliance',
-        label: '3.6 Training Hours',
-        weight: 30,
-        description: 'Binary scoring for each invoice period. 100% if submission is fully accurate and on time, 0% otherwise. Monthly score is the average.',
-        scoringLogic: 'binary',
-        labels: { done: 'N/A', met: 'Pass/Fail' }
-    },
-
-    // 4. WBRs (20%)
-    {
-        id: '4.1',
-        categoryId: 'wbrs',
-        label: '4.1 WBR Attendance',
-        weight: 50,
-        description: 'Score = Number of successful WBRs attended and presented / Total WBRs scheduled in the month. A WBR is successful when vendor attends on time and presents their section.',
-        scoringLogic: 'standard',
-        labels: { done: 'WBRs Scheduled', met: 'WBRs Attended' }
-    },
-    {
-        id: '4.2',
-        categoryId: 'wbrs',
-        label: '4.2 Quality of WBR Slides',
-        weight: 50,
-        description: 'Score = Number of WBRs with acceptable quality slides / Total WBRs scheduled in the month. Slides must show current STP performance, analysis, and action plans.',
-        scoringLogic: 'standard',
-        labels: { done: 'WBRs Scheduled', met: 'Quality Slides' }
-    },
-
-    // 5. Training Performance (25%)
-    {
-        id: '5.1',
-        categoryId: 'trainingPerformance',
-        label: '5.1 Nesting Performance',
-        weight: 50,
-        description: 'Score = Waves that met nesting performance threshold / Total eligible waves. Eligible waves are those with Go Live in the month.',
-        scoringLogic: 'standard',
-        labels: { done: 'Eligible Waves', met: 'Threshold Met' }
-    },
-    {
-        id: '5.2',
-        categoryId: 'trainingPerformance',
-        label: '5.2 New Hires Performance',
-        weight: 50,
-        description: 'Score = KPIs showing steady improvement / Total KPIs tracked (reference is 5 KPIs). Focus is on STP trend for new hire waves.',
-        scoringLogic: 'standard',
-        labels: { done: 'KPIs Tracked', met: 'Improved KPIs' }
-    },
-
-    // 6. Vendor Management Behavior (10%)
-    {
-        id: '6.1',
-        categoryId: 'vendorBehavior',
-        label: '6.1 Alignment with Process',
-        weight: 50,
-        description: 'Default score is 100%. If there is a critical failure with negative business impact (e.g., not following SOP update cascading), score becomes 0.',
-        scoringLogic: 'binary',
-        labels: { done: 'N/A', met: 'Pass/Fail' }
-    },
-    {
-        id: '6.2',
-        categoryId: 'vendorBehavior',
-        label: '6.2 Proactive Communication',
-        weight: 50,
-        description: 'Default score is 100%. If there is a critical failure (e.g., Regional team having to chase a critical ask), score becomes 0.',
-        scoringLogic: 'binary',
-        labels: { done: 'N/A', met: 'Pass/Fail' }
+        categoryId: 'PlaceHolder',
+        label: '1.1 PlaceHolder',
+        weight: 100,
+        description: 'Placeholder',
+        scoringLogic: 'linear',
+        labels: { done: 'Done', met: 'Met' }
     },
 ];
 
@@ -199,3 +31,140 @@ export const DEFAULT_CONFIG: AppConfig = {
     categories: DEFAULT_CATEGORIES,
     kpis: DEFAULT_KPIS,
 };
+
+// ============================================================================
+// NEW: Tier 1 & Tier 2 Scorecards
+// ============================================================================
+
+export const DEFAULT_TIER1_CATEGORIES: Category[] = [
+    { id: 't1_trainingExcellence', label: '1. Training Delivery Excellence', weight: 50 },
+    { id: 't1_agentPerformance', label: '2. Agent Performance Outcomes', weight: 50 },
+];
+
+export const DEFAULT_TIER1_KPIS: KPI[] = [
+    // 1. Training Delivery Excellence (50%)
+    {
+        id: '1.1',
+        categoryId: 't1_trainingExcellence',
+        label: '1.1 Pre-Certification Attrition',
+        weight: 33.33,
+        description: 'Pass if attrition < 15%, Fail if ≥15% (Calculation: Agents dropped / Agents started).',
+        scoringLogic: 'binary',
+        labels: { done: 'Agents Started', met: 'Agents Dropped' }
+    },
+    {
+        id: '1.2',
+        categoryId: 't1_trainingExcellence',
+        label: '1.2 Certification Pass Rate',
+        weight: 33.33,
+        description: 'Pass if >=95%, Fail if <95% (Calculation: Agents passed / Agents took certification).',
+        scoringLogic: 'binary',
+        labels: { done: 'Agents Took Cert', met: 'Agents Passed' }
+    },
+    {
+        id: '1.3',
+        categoryId: 't1_trainingExcellence',
+        label: '1.3 On-Job Training Delivery',
+        weight: 33.34,
+        description: 'Score based on training completion (≥94% attendance) / Trainings requested.',
+        scoringLogic: 'standard',
+        labels: { done: 'Trainings Requested', met: 'Trainings Completed' }
+    },
+
+    // 2. Agent Performance Outcomes (50%)
+    {
+        id: '2.1',
+        categoryId: 't1_agentPerformance',
+        label: '2.1 Nesting Performance',
+        weight: 100,
+        description: 'Score based on agents graduated nesting / Total agents started nesting.',
+        scoringLogic: 'standard',
+        labels: { done: 'Started Nesting', met: 'Graduated Free' }
+    }
+];
+
+export const DEFAULT_TIER1_SCORECARD: ScorecardConfig = {
+    id: 'tier1-billing-v1',
+    name: 'Tier 1 — Billing Scorecard',
+    description: 'Tracks training delivery excellence, agent performance outcomes, and capacity delivery.',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    isActive: true,
+    tier: 'tier1',
+    isDefault: true,
+    categories: DEFAULT_TIER1_CATEGORIES,
+    kpis: DEFAULT_TIER1_KPIS,
+};
+
+export const DEFAULT_TIER2_CATEGORIES: Category[] = [
+    { id: 't2_governance', label: 'Monthly Governance', weight: 100 },
+];
+
+export const DEFAULT_TIER2_KPIS: KPI[] = [
+    {
+        id: '3.1',
+        categoryId: 't2_governance',
+        label: '3.1 Training Plan',
+        weight: 20,
+        description: 'On-time submissions / Eligible waves.',
+        scoringLogic: 'standard',
+        labels: { done: 'Eligible Waves', met: 'On-Time Submissions' }
+    },
+    {
+        id: '3.2',
+        categoryId: 't2_governance',
+        label: '3.2 Certification Tracker',
+        weight: 20,
+        description: 'Updated within 24 hours / Eligible waves.',
+        scoringLogic: 'standard',
+        labels: { done: 'Eligible Waves', met: 'Updated on Time' }
+    },
+    {
+        id: '3.3',
+        categoryId: 't2_governance',
+        label: '3.3 Training Hours Accuracy',
+        weight: 20,
+        description: 'Accurate and on-time submissions / Inaccurate or late submissions.',
+        scoringLogic: 'binary',
+        labels: { done: 'Submissions', met: 'Accurate & On-Time' }
+    },
+    {
+        id: '3.4',
+        categoryId: 't2_governance',
+        label: '3.4 Training Toolkit Readiness',
+        weight: 20,
+        description: 'Passed audits / Total audits.',
+        scoringLogic: 'standard',
+        labels: { done: 'Total Audits', met: 'Passed Audits' }
+    },
+    {
+        id: '3.5',
+        categoryId: 't2_governance',
+        label: '3.5 Training Completion vs Locked FTE',
+        weight: 20,
+        description: 'HC delivered on committed date / Locked FTE commitment.',
+        scoringLogic: 'standard',
+        labels: { done: 'Locked FTE', met: 'HC Delivered' }
+    }
+];
+
+export const DEFAULT_TIER2_SCORECARD: ScorecardConfig = {
+    id: 'tier2-governance-v1',
+    name: 'Tier 2 — Monthly Governance Scorecard',
+    description: 'Tracks monthly governance, accuracy, and compliance.',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    isActive: true,
+    tier: 'tier2',
+    isDefault: true,
+    categories: DEFAULT_TIER2_CATEGORIES,
+    kpis: DEFAULT_TIER2_KPIS,
+};
+
+export const DEFAULT_SCORECARD_MODELS: ScorecardConfig[] = [
+    DEFAULT_TIER1_SCORECARD,
+    DEFAULT_TIER2_SCORECARD,
+];
+

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Plus, Trash2, Edit2, X, Check, Sliders, RotateCcw } from 'lucide-react';
+import { Save, Plus, Trash2, Edit2, X, Check, Sliders, RotateCcw, LayoutTemplate } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import clsx from 'clsx';
 import { EnhancedKPI, SCORING_LOGIC_METADATA, ScoringLogicType } from '../types/config.types';
@@ -7,7 +7,7 @@ import { KPIConfigModal } from './config/KPIConfigModal';
 import { SaveScorecardModal } from './SaveScorecardModal';
 import { scorecardConfigService } from '../services/scorecard-config.service';
 import { ScorecardConfig } from '../types';
-import { DEFAULT_CONFIG } from '../data/defaults';
+import { DEFAULT_CONFIG, DEFAULT_SCORECARD_MODELS } from '../data/defaults';
 
 interface Props {
     scorecardId: string; // 'new' for new scorecard, or existing ID
@@ -16,19 +16,13 @@ interface Props {
 }
 
 export const ScorecardEditorPanel: React.FC<Props> = ({ scorecardId, onCancel, onSaved }) => {
-    const [localConfig, setLocalConfig] = useState<ScorecardConfig>(() => {
+    // State to track if we need to select a template (only for new scorecards)
+    const [needsTemplateSelection, setNeedsTemplateSelection] = useState(scorecardId === 'new');
+
+    // The actual config being edited
+    const [localConfig, setLocalConfig] = useState<ScorecardConfig | null>(() => {
         if (scorecardId === 'new') {
-            return {
-                ...DEFAULT_CONFIG,
-                id: 'new',
-                name: 'New Scorecard',
-                description: '',
-                department: 'Operations',
-                version: 1,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                isActive: true
-            };
+            return null; // Waiting for template selection
         } else {
             return scorecardConfigService.getConfig(scorecardId) || DEFAULT_CONFIG;
         }
@@ -39,6 +33,107 @@ export const ScorecardEditorPanel: React.FC<Props> = ({ scorecardId, onCancel, o
     const [showSuccess, setShowSuccess] = useState(false);
     const [configuringKPIId, setConfiguringKPIId] = useState<string | null>(null);
     const [showSaveModal, setShowSaveModal] = useState(false);
+
+    // Initializer for new scorecards based on selection
+    const selectTemplate = (templateId: string) => {
+        let baseConfig: ScorecardConfig;
+
+        if (templateId === 'blank') {
+            baseConfig = {
+                ...DEFAULT_CONFIG,
+                id: 'new',
+                name: 'New Custom Scorecard',
+                description: 'A custom scorecard configuration',
+                department: 'Operations',
+                version: 1,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                isActive: true
+            };
+        } else {
+            const template = DEFAULT_SCORECARD_MODELS.find(m => m.id === templateId);
+            if (template) {
+                baseConfig = {
+                    ...template,
+                    id: 'new', // Reset ID
+                    name: `Copy of ${template.name}`,
+                    isDefault: false, // Ensure copy is not default
+                    isActive: true,
+                    updatedAt: new Date().toISOString()
+                };
+            } else {
+                baseConfig = DEFAULT_CONFIG;
+            }
+        }
+
+        setLocalConfig(baseConfig);
+        setNeedsTemplateSelection(false);
+    };
+
+    // If we are in template selection mode, show that UI
+    if (needsTemplateSelection) {
+        return (
+            <div className="space-y-8 animate-in fade-in">
+                <div>
+                    <h2 className="text-3xl font-black text-slate-900">Choose a Template</h2>
+                    <p className="text-slate-500 text-lg mt-2">Select a starting point for your new scorecard configuration.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Blank Template */}
+                    <button
+                        onClick={() => selectTemplate('blank')}
+                        className="group relative flex flex-col items-start p-8 bg-white border-2 border-slate-200 hover:border-keeta-primary rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 text-left"
+                    >
+                        <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                            <Plus size={28} className="text-slate-400 group-hover:text-keeta-primary" />
+                        </div>
+                        <h3 className="text-xl font-bold text-slate-900 mb-2">Custom / Blank</h3>
+                        <p className="text-slate-500 leading-relaxed">
+                            Start from scratch. Define your own categories, KPIs, and scoring logic completely.
+                        </p>
+                    </button>
+
+                    {/* Pre-defined Templates */}
+                    {DEFAULT_SCORECARD_MODELS.map(model => (
+                        <button
+                            key={model.id}
+                            onClick={() => selectTemplate(model.id)}
+                            className="group relative flex flex-col items-start p-8 bg-white border-2 border-slate-200 hover:border-keeta-primary rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 text-left"
+                        >
+                            <div className="absolute top-6 right-6 px-3 py-1 bg-blue-50 text-blue-600 text-xs font-bold uppercase rounded-full">
+                                {model.tier === 'tier1' ? 'Tier 1' : 'Tier 2'}
+                            </div>
+                            <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300">
+                                <LayoutTemplate size={28} className="text-blue-500 group-hover:text-keeta-primary" />
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-900 mb-2">{model.name}</h3>
+                            <p className="text-slate-500 leading-relaxed line-clamp-3">
+                                {model.description || "Use this standard template as a starting point."}
+                            </p>
+                            <div className="mt-6 flex items-center gap-4 text-sm font-semibold text-slate-400">
+                                <span>{model.categories.length} Categories</span>
+                                <span>•</span>
+                                <span>{model.kpis.length} KPIs</span>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+
+                <div className="pt-8 border-t border-slate-200 flex justify-center">
+                    <button
+                        onClick={onCancel}
+                        className="text-slate-400 hover:text-slate-600 font-bold transition-colors"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // Safety check - should not happen due to logic above, but good for TS
+    if (!localConfig) return null;
 
     const configuringKPI = localConfig.kpis.find(k => k.id === configuringKPIId);
 
@@ -175,7 +270,7 @@ export const ScorecardEditorPanel: React.FC<Props> = ({ scorecardId, onCancel, o
     };
 
     const totalCatWeight = localConfig.categories.reduce((sum, c) => sum + c.weight, 0);
-    const isValid = localConfig.categories.every(c => {
+    const isValid = localConfig?.categories?.every(c => {
         const catKpis = localConfig.kpis.filter(k => k.categoryId === c.id);
         const catKpiWeight = catKpis.reduce((sum, k) => sum + k.weight, 0);
         return catKpiWeight === 100 || catKpis.length === 0;

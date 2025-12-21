@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import {
     ArrowLeft, Download, Edit, CheckCircle, XCircle,
@@ -9,8 +9,9 @@ import clsx from 'clsx';
 import { getRagColor } from '../utils/scoring';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { CategoryScoreResult } from '../types';
+import { CategoryScoreResult, AppConfig } from '../types';
 import { indexedDBService, AttachmentMetadata } from '../services/indexedDB.service';
+import { scorecardConfigService } from '../services/scorecard-config.service';
 
 // Component to load and display individual attachment from IndexedDB
 const AttachmentThumbnail: React.FC<{ attachment: AttachmentMetadata; onClick: (url: string) => void }> = ({ attachment, onClick }) => {
@@ -99,16 +100,49 @@ const AttachmentThumbnail: React.FC<{ attachment: AttachmentMetadata; onClick: (
 
 export const AuditDetailsPage: React.FC = () => {
     const { vendorId, period } = useParams<{ vendorId: string; period: string }>();
-    const { audits, config, vendors, auditStatus, calculateScore } = useApp();
+    const { audits, config: globalConfig, vendors, auditStatus, calculateScore } = useApp();
     const navigate = useNavigate();
 
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const [isExporting, setIsExporting] = useState(false);
 
-    const key = `${vendorId}-${period}`;
-    const auditEntries = audits[key] || [];
-    const status = auditStatus[key] || 'draft';
+    // 1. Resolve Audit Key & Entries
+    let key = `${vendorId}-${period}`;
+    let auditEntries = audits[key];
+    let status = auditStatus[key] || 'draft';
+
+    // Fallback: Check for composite keys if legacy key not found
+    if (!auditEntries || auditEntries.length === 0) {
+        const prefix = `${vendorId}-${period}-`;
+        const foundKey = Object.keys(audits).find(k => k.startsWith(prefix));
+        if (foundKey) {
+            key = foundKey;
+            auditEntries = audits[key];
+            status = auditStatus[key];
+        }
+    }
+
+    auditEntries = auditEntries || [];
+
+    // 2. Resolve Configuration for this specific audit
+    // Priority:
+    // 1. URL Query Param (explicit request)
+    // 2. Audit's stored configId (implicit correct)
+    // 3. Global active config (fallback)
+    const [searchParams] = useSearchParams();
+    const queryConfigId = searchParams.get('configId');
+
+    const usedConfigId = queryConfigId || (auditEntries.length > 0 ? auditEntries[0].scorecardConfigId : undefined);
+
+    const displayConfig: AppConfig = React.useMemo(() => {
+        if (usedConfigId) {
+            const specificConfig = scorecardConfigService.getConfig(usedConfigId);
+            if (specificConfig) return specificConfig;
+        }
+        return globalConfig;
+    }, [usedConfigId, globalConfig]);
+
     const vendor = vendors.find(v => v.id === vendorId);
 
     if (!vendor || auditEntries.length === 0) {
@@ -127,7 +161,7 @@ export const AuditDetailsPage: React.FC = () => {
         );
     }
 
-    const results = calculateScore(vendorId!, period!);
+    const results = calculateScore(vendorId!, period!, usedConfigId);
 
     const toggleCategory = (categoryId: string) => {
         const newExpanded = new Set(expandedCategories);
@@ -144,7 +178,7 @@ export const AuditDetailsPage: React.FC = () => {
             setIsExporting(true);
 
             // 1. Expand all categories to ensure everything is rendered
-            const allCategoryIds = new Set(config.categories.map(c => c.id));
+            const allCategoryIds = new Set(displayConfig.categories.map(c => c.id));
             const previousExpanded = new Set(expandedCategories);
             setExpandedCategories(allCategoryIds);
 
@@ -234,7 +268,7 @@ export const AuditDetailsPage: React.FC = () => {
         );
     };
 
-    const totalKpis = config.kpis.length;
+    const totalKpis = displayConfig.kpis.length;
     const failedKpis = (Object.values(results.categoryScores) as CategoryScoreResult[]).flatMap((cat) =>
         Object.values(cat.kpiScores).filter((kpiScore) => kpiScore.score < 100)
     ).length;
@@ -368,10 +402,10 @@ export const AuditDetailsPage: React.FC = () => {
             <div>
                 <h2 className="text-2xl font-black text-slate-900 mb-4">Category Breakdown</h2>
                 <div className="space-y-4">
-                    {config.categories.map(category => {
+                    {displayConfig.categories.map(category => {
                         const isExpanded = expandedCategories.has(category.id);
                         const categoryScore = results.categoryScores[category.id];
-                        const categoryKpis = config.kpis.filter(kpi => kpi.categoryId === category.id);
+                        const categoryKpis = displayConfig.kpis.filter(kpi => kpi.categoryId === category.id);
 
                         return (
                             <div key={category.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">

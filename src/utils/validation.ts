@@ -1,4 +1,5 @@
 import { AuditEntry, KPI } from '../types';
+import { calculateComplianceScore } from './scoring';
 
 export interface ValidationError {
     field: string;
@@ -119,17 +120,18 @@ export const validateComments = (
     auditEntry: AuditEntry,
     kpi: KPI
 ): string | null => {
-    // Binary logic: if met = 0, comment required
-    if (kpi.scoringLogic === 'binary' && auditEntry.auditsMet === 0) {
-        if (!auditEntry.commentsForMissed || auditEntry.commentsForMissed.trim().length < 10) {
-            return 'Please provide a detailed comment (at least 10 characters) explaining why this item failed';
-        }
+    // New Rule: If score < 100, comment is required.
+    // If auditsDone is 0, score is 100 (auto-pass), so no comment needed.
+    if (!auditEntry || auditEntry.auditsDone === 0) {
+        return null;
     }
 
-    // Standard/Inverse logic: if there are missed items, comment required
-    if ((kpi.scoringLogic === 'standard' || kpi.scoringLogic === 'inverse') && auditEntry.auditsMissed > 0) {
+    const percentage = (auditEntry.auditsMet / auditEntry.auditsDone) * 100;
+    const score = calculateComplianceScore(percentage, kpi);
+
+    if (score < 100) {
         if (!auditEntry.commentsForMissed || auditEntry.commentsForMissed.trim().length < 10) {
-            return 'Please provide a detailed comment (at least 10 characters) explaining the missed items';
+            return 'Please provide a detailed comment (at least 10 characters) explaining the miss';
         }
     }
 
@@ -240,19 +242,6 @@ export const validateAuditCompletion = (
         });
     }
 
-    // Check all entries have auditsDone > 0
-    const incompleteEntries = entries.filter(e => e.auditsDone === 0);
-    if (incompleteEntries.length > 0) {
-        incompleteEntries.forEach(entry => {
-            const kpi = kpis.find(k => k.id === entry.kpiId);
-            errors.push({
-                field: 'auditsDone',
-                message: `"${kpi?.label}" has no audits done`,
-                kpiId: entry.kpiId,
-                severity: 'error'
-            });
-        });
-    }
 
     // Validate each entry
     entries.forEach(entry => {

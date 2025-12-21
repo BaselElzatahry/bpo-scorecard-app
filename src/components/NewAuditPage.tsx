@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { PlayCircle, Calendar, Building2 } from 'lucide-react';
+import { PlayCircle, Calendar, Building2, Layers } from 'lucide-react';
+import { scorecardConfigService } from '../services/scorecard-config.service';
 import { DuplicateAuditModal } from './DuplicateAuditModal';
 import { useToast } from '../context/ToastContext';
 import { Button } from './shared';
 
 export const NewAuditPage: React.FC = () => {
-    const { vendors, setVendorId, setPeriod, startAudit, audits, auditStatus, markAsEditing } = useApp();
+    const { vendors, setVendorId, setPeriod, setConfigId, startAudit, audits, startedAudits, auditStatus, markAsEditing } = useApp();
     const navigate = useNavigate();
     const location = useLocation();
     const { showToast } = useToast();
@@ -23,26 +24,59 @@ export const NewAuditPage: React.FC = () => {
     // Local state for selection before committing
     const [selectedVendor, setSelectedVendor] = useState(preFilledVendor || vendors[0]?.id || '');
     const [selectedPeriod, setSelectedPeriod] = useState(preFilledPeriod || new Date().toISOString().slice(0, 7));
+    // Enforce active context
+    const { activeScorecardId } = useApp();
+    const [selectedConfigId] = useState<string>(activeScorecardId || '');
+
+    // We can fetch data just for display
+    const activeConfigName = React.useMemo(() => {
+        const cfg = scorecardConfigService.getConfig(activeScorecardId);
+        return cfg ? cfg.name : 'Default Configuration';
+    }, [activeScorecardId]);
     const [isChecking, setIsChecking] = useState(false);
     const [showDuplicateModal, setShowDuplicateModal] = useState(false);
     const [duplicateDetails, setDuplicateDetails] = useState<any>(null);
 
     const checkAuditExists = () => {
-        const key = `${selectedVendor}-${selectedPeriod}`;
-        const existingAudits = audits[key];
-        const status = auditStatus[key];
+        // Strict Check: Check for audit with EXACTLY this config ID
+        if (selectedConfigId) {
+            const compositeKey = `${selectedVendor}-${selectedPeriod}-${selectedConfigId}`;
+            if ((audits[compositeKey] && audits[compositeKey].length > 0) || startedAudits[compositeKey]) {
+                const vendor = vendors.find(v => v.id === selectedVendor);
+                return {
+                    exists: true,
+                    vendorName: vendor?.name || 'Unknown',
+                    period: selectedPeriod,
+                    status: auditStatus[compositeKey] || 'draft',
+                    entryCount: audits[compositeKey] ? audits[compositeKey].length : 0,
+                    lastModified: new Date().toISOString()
+                };
+            }
+        }
 
-        if (existingAudits && existingAudits.length > 0) {
-            const vendor = vendors.find(v => v.id === selectedVendor);
-            return {
-                exists: true,
-                vendorName: vendor?.name || 'Unknown',
-                period: selectedPeriod,
-                status: status || 'draft',
-                entryCount: existingAudits.length,
-                // Note: lastModified would come from backend in production
-                lastModified: new Date().toISOString()
-            };
+        // Fallback/Legacy Check: Only if using default config (no ID) or checking globally?
+        // If user selects a specific config, we shouldn't care about OTHER configs for this period
+        // UNLESS business rule says "Only 1 audit per period regardless of model"? 
+        // User asked: "only a maximum of one unique report for each scorecard model per vendor per month"
+        // So multiple models for same month IS allowed.
+
+        // However, if we are using the "Default" (legacy) model (empty configId), we should check the legacy key.
+        if (!selectedConfigId) {
+            const legacyKey = `${selectedVendor}-${selectedPeriod}`;
+            // We also need to skip this check if the legacy key actually maps to a specific config ID in auditConfigs
+            // But auditConfigs is for "active" config preference.
+            // Let's just check if data exists at this key.
+            if ((audits[legacyKey] && audits[legacyKey].length > 0) || startedAudits[legacyKey]) {
+                const vendor = vendors.find(v => v.id === selectedVendor);
+                return {
+                    exists: true,
+                    vendorName: vendor?.name || 'Unknown',
+                    period: selectedPeriod,
+                    status: auditStatus[legacyKey] || 'draft',
+                    entryCount: audits[legacyKey] ? audits[legacyKey].length : 0,
+                    lastModified: new Date().toISOString()
+                };
+            }
         }
 
         return { exists: false };
@@ -70,10 +104,22 @@ export const NewAuditPage: React.FC = () => {
             // No duplicate - proceed with new audit
             setVendorId(selectedVendor);
             setPeriod(selectedPeriod);
-            startAudit(selectedVendor, selectedPeriod);
+
+            // Ensure config is passed
+            if (!selectedConfigId) {
+                showToast('Please select a scorecard configuration', 'error');
+                setIsChecking(false);
+                return;
+            }
+
+            startAudit(selectedVendor, selectedPeriod, selectedConfigId);
+
+            // Dynamic navigation based on selected config
+            const config = scorecardConfigService.getConfig(selectedConfigId);
+            const firstCategoryId = config?.categories[0]?.id || 'trainingDelivery';
 
             showToast('Starting new audit...', 'success');
-            navigate('/audit/trainingDelivery');
+            navigate(`/audit/${firstCategoryId}`);
         } catch (error) {
             console.error('Error checking audit:', error);
             showToast('Error checking audit existence', 'error');
@@ -85,10 +131,36 @@ export const NewAuditPage: React.FC = () => {
     const handleEditExisting = () => {
         setVendorId(selectedVendor);
         setPeriod(selectedPeriod);
+        if (selectedConfigId) {
+            setConfigId(selectedConfigId);
+        }
         markAsEditing(selectedVendor, selectedPeriod);
         setShowDuplicateModal(false);
         showToast('Opening existing audit for editing', 'info');
-        navigate('/audit/trainingDelivery');
+
+        // Find correct config for existing audit to navigate correctly
+        const key = selectedConfigId
+            ? `${selectedVendor}-${selectedPeriod}-${selectedConfigId}`
+            : `${selectedVendor}-${selectedPeriod}`;
+
+        const existingAudits = audits[key];
+        let startCategory = 'trainingDelivery';
+
+        // If specific config selected, use that
+        if (selectedConfigId) {
+            const config = scorecardConfigService.getConfig(selectedConfigId);
+            if (config && config.categories.length > 0) {
+                startCategory = config.categories[0].id;
+            }
+        } else if (existingAudits && existingAudits.length > 0) {
+            // Fallback to inferring from audit data
+            const savedConfigId = existingAudits[0].scorecardConfigId;
+            if (savedConfigId) {
+                const savedConfig = scorecardConfigService.getConfig(savedConfigId);
+                if (savedConfig) startCategory = savedConfig.categories[0].id;
+            }
+        }
+        navigate(`/audit/${startCategory}`);
     };
 
     return (
@@ -144,9 +216,20 @@ export const NewAuditPage: React.FC = () => {
                         </div>
                     </div>
 
+                    <div className="space-y-4">
+                        <label className="block text-sm font-bold uppercase text-slate-500 tracking-wider">Select Scorecard Model</label>
+                        <div className="relative">
+                            <Layers className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                            <div className="w-full pl-12 pr-4 py-4 bg-slate-100 border-2 border-slate-100 rounded-xl font-bold text-slate-500 cursor-not-allowed">
+                                {activeConfigName}
+                                <span className="ml-2 text-xs font-normal text-slate-400">(Determined by active context)</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <Button
                         onClick={handleStart}
-                        disabled={!selectedVendor || !selectedPeriod}
+                        disabled={!selectedVendor || !selectedPeriod || !selectedConfigId}
                         variant="primary"
                         size="lg"
                         loading={isChecking}

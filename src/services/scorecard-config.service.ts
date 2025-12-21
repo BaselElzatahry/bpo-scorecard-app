@@ -107,24 +107,15 @@ class ScorecardConfigService {
      * Called on first app load or when no configs exist
      */
     initializeDefaults(): void {
-        // Import default categories and KPIs
-        const { DEFAULT_CATEGORIES, DEFAULT_KPIS } = require('../data/defaults');
+        // Import default scorecard models
+        const { DEFAULT_SCORECARD_MODELS } = require('../data/defaults');
 
-        const defaultConfig: ScorecardConfig = {
-            id: 'bpo-training-default',
-            name: 'BPO Training Delivery Scorecard',
-            description: 'Default scorecard for BPO training delivery audits',
-            department: 'BPO',
-            version: 1,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            isActive: true,
-            categories: DEFAULT_CATEGORIES,
-            kpis: DEFAULT_KPIS
-        };
-
-        localStorage.setItem(this.STORAGE_KEY, JSON.stringify([defaultConfig]));
-        console.log('✅ Initialized default BPO Training scorecard');
+        if (DEFAULT_SCORECARD_MODELS && Array.isArray(DEFAULT_SCORECARD_MODELS)) {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(DEFAULT_SCORECARD_MODELS));
+            console.log(`✅ Initialized ${DEFAULT_SCORECARD_MODELS.length} default scorecards`);
+        } else {
+            console.error('❌ Failed to load DEFAULT_SCORECARD_MODELS');
+        }
     }
 
     /**

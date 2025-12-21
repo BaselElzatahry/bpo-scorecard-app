@@ -3,10 +3,19 @@ import { useApp } from '../../context/AppContext';
 import { calculateScores } from '../../utils/scoring';
 import { BarChart3, Award } from 'lucide-react';
 import clsx from 'clsx';
+import { scorecardConfigService } from '../../services/scorecard-config.service';
 
 export const VendorComparisonPanel: React.FC = () => {
-    const { audits, config, vendors } = useApp();
+    // USE GLOBAL CONTEXT for config
+    const { audits, vendors, activeScorecardId } = useApp();
     const [selectedPeriod, setSelectedPeriod] = useState<string>('');
+
+    // Derived config object from GLOBAL context
+    // We can fetch details if needed, or just use ID
+    const activeConfigs = React.useMemo(() => scorecardConfigService.getActiveConfigs(), []);
+    const selectedConfig = React.useMemo(() => {
+        return activeConfigs.find(c => c.id === activeScorecardId) || activeConfigs[0];
+    }, [activeConfigs, activeScorecardId]);
 
     // Generate last 12 months + current month
     const availablePeriods = useMemo(() => {
@@ -45,9 +54,22 @@ export const VendorComparisonPanel: React.FC = () => {
 
         return vendors.map(vendor => {
             // Fix: Handle potential hyphen in vendor ID by constructing key carefully
-            // The key format is strictly `${vendorId}-${period}`
-            const key = `${vendor.id}-${selectedPeriod}`;
-            const vendorAudits = audits[key] || [];
+            // Multi-model support: keys are vendor-period-configId
+            // If selectedConfigId is present, we look for that specific audit.
+            // If it's a legacy audit, it might be just vendor-period (implicitly mapped to default config if set)
+
+            let vendorAudits = [];
+
+            if (activeScorecardId) {
+                const compositeKey = `${vendor.id}-${selectedPeriod}-${activeScorecardId}`;
+                vendorAudits = audits[compositeKey] || [];
+
+                // STRICT SCOPING: Do NOT fallback to legacy keys if we are in a specific model context.
+                // This ensures clean separation.
+            } else {
+                // Fallback only if no active model (shouldn't happen with new selector logic)
+                vendorAudits = audits[`${vendor.id}-${selectedPeriod}`] || [];
+            }
 
             if (vendorAudits.length === 0) {
                 return {
@@ -55,14 +77,15 @@ export const VendorComparisonPanel: React.FC = () => {
                     score: null,
                     categoryScores: {} as Record<string, any>,
                     hasData: false,
-                    rag: 'red' as const // Default to red if no data, or handle gracefully
+                    rag: 'red' as const
                 };
             }
 
+            // Calculate using the SELECTED config
             const results = calculateScores(
                 vendorAudits,
-                config.categories,
-                config.kpis,
+                selectedConfig.categories,
+                selectedConfig.kpis,
                 vendor.id,
                 selectedPeriod
             );
@@ -75,7 +98,7 @@ export const VendorComparisonPanel: React.FC = () => {
                 rag: results.rag
             };
         }).sort((a, b) => (b.score || 0) - (a.score || 0));
-    }, [vendors, audits, config, selectedPeriod]);
+    }, [vendors, audits, selectedConfig, selectedPeriod, activeScorecardId]);
 
     // Calculate statistics
     const stats = useMemo(() => {
@@ -99,8 +122,10 @@ export const VendorComparisonPanel: React.FC = () => {
 
     return (
         <div className="space-y-6 pb-12 animate-in fade-in">
-            {/* Period Selector */}
-            <div className="flex justify-end">
+            {/* Selectors */}
+            <div className="flex justify-end gap-3">
+                {/* Global Context Active - No local selector needed */}
+
                 <div className="flex items-center gap-3 bg-slate-900 p-2 rounded-2xl border border-slate-700 backdrop-blur-sm">
                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider px-2">Period</label>
                     <select
@@ -322,7 +347,7 @@ export const VendorComparisonPanel: React.FC = () => {
 
                                 {/* Category Breakdown */}
                                 <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-200">
-                                    {config.categories.map(category => {
+                                    {selectedConfig.categories.map(category => {
                                         const catScore = vendorData.categoryScores?.[category.id];
                                         const score = catScore?.score || 0;
 
