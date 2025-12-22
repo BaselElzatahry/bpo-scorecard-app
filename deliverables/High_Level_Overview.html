@@ -99,20 +99,25 @@
 
     <header>
         <h1>Keeta BPO Scorecard — High-Level Overview</h1>
-        <div class="subtitle"><strong>Target Audience:</strong> Product Managers, Directors, Stakeholders</div>
+        <div class="subtitle"><strong>Target Audience:</strong> Backend Developers & DevOps Engineers</div>
     </header>
 
     <section>
         <h2>1. High-Level System Architecture</h2>
         <p>The <strong>Keeta BPO Scorecard</strong> is a <strong>Progressive Web Application (PWA)</strong> designed to
-            standardise how BPO vendors are audited and evaluated. It operates effectively as a "smart spreadsheet" with
-            a powerful visual layer, currently running entirely within the user's browser.</p>
+            standardize BPO vendor audits and evaluation. The frontend is a React-based SPA that currently runs entirely
+            client-side with browser-based storage. <strong>Backend integration is required</strong> to enable
+            centralized
+            data storage, multi-user access, and production deployment.</p>
 
         <div class="box">
-            <h3>Core Concept</h3>
-            <p>Think of the application as a <strong>self-contained evaluation tool</strong>. Instead of sending data
-                back and forth to a central server for every click, the application loads once and handles all
-                calculations, data storage, and report generation instantly on the user's device.</p>
+            <h3>Current Architecture</h3>
+            <p>The application is a <strong>client-side only implementation</strong>. All business logic, calculations,
+                and data persistence currently execute in the browser using LocalStorage and IndexedDB. To deploy this
+                tool
+                on the company's internal platform, you'll need to implement backend services for authentication, data
+                persistence,
+                and file storage.</p>
         </div>
 
         <h3>Major Components</h3>
@@ -121,8 +126,8 @@
                 Red/Amber/Green).</li>
             <li><strong>Audit Interface:</strong> A digital form where Regional Training Managers input performance data
                 against specific Categories and KPIs.</li>
-            <li><strong>Calculation Engine:</strong> An "invisible brain" that instantly computes complex weighted
-                scores as data is entered.</li>
+            <li><strong>Calculation Engine:</strong> Core business logic that computes complex weighted
+                scores in real-time. Currently executes client-side but can be migrated to backend for consistency.</li>
             <li><strong>Admin/Configuration Panel:</strong> Allows authorised users to change the "Rules of the
                 Game"—weightings, KPI definitions, and scoring targets—without needing a developer.</li>
             <li><strong>Report Generator:</strong> Creates PDF exports and visual charts for Monthly Business Reviews
@@ -152,37 +157,37 @@
                 <tr>
                     <th>Component</th>
                     <th>Technology</th>
-                    <th>Why it was chosen</th>
+                    <th>Deployment Next Steps</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
                     <td><strong>Frontend Framework</strong></td>
                     <td><strong>React + TypeScript</strong></td>
-                    <td>The industry standard for building interactive, complex user interfaces. Ensures type safety and
-                        few bugs.</td>
+                    <td>Static build ready for deployment. Run <code>npm run build</code> and host on CDN, Azure Static
+                        Web Apps, or internal web server.</td>
                 </tr>
                 <tr>
                     <td><strong>Styling</strong></td>
                     <td><strong>Tailwind CSS</strong></td>
-                    <td>Allows for a modern, clean, "SaaS-like" aesthetic that is mobile-responsive.</td>
+                    <td>Production CSS bundle generated during build. No additional configuration needed.</td>
                 </tr>
                 <tr>
                     <td><strong>Charting</strong></td>
                     <td><strong>Recharts</strong></td>
-                    <td>Renders professional-grade trend lines and bar charts for the dashboards.</td>
+                    <td>Client-side rendering. No backend changes required.</td>
                 </tr>
                 <tr>
                     <td><strong>Application Logic</strong></td>
                     <td><strong>Node.js (Compatible)</strong></td>
-                    <td>The logic is written in JavaScript/TypeScript, making it easy to move to a backend server later
-                        if needed.</td>
+                    <td>Core logic can remain client-side or be migrated to backend API for server-side validation and
+                        consistency.</td>
                 </tr>
                 <tr>
                     <td><strong>Storage (Current)</strong></td>
                     <td><strong>Local Storage + IndexedDB</strong></td>
-                    <td><strong>No Database Required.</strong> Allows the app to work offline or without a server setup.
-                        Uses IndexedDB for large file attachments.</td>
+                    <td><strong>MUST BE REPLACED:</strong> Implement REST/GraphQL API with database (PostgreSQL,
+                        MongoDB, or SQL Server). See Backend Requirements section below.</td>
                 </tr>
             </tbody>
         </table>
@@ -226,37 +231,68 @@
     </section>
 
     <section>
-        <h2>5. Integration Strategy & Missing Features</h2>
-        <p>Currently, the system is <strong>Standalone</strong>. To integrate it into the corporate platform, we need to
-            "unplug" the local storage and "plug in" a centralised database.</p>
+        <h2>5. Backend Requirements for Production Deployment</h2>
+        <p>The current implementation is <strong>client-side only</strong> with browser-based storage. To deploy this
+            tool
+            on the company's internal platform with multi-user access and centralized data, the following backend
+            infrastructure is required:</p>
 
         <div class="alert">
-            <h3>Critical Missing Components: Authentication</h3>
-            <p><strong>There is currently NO real sign-in or registration process.</strong> The application simulates a
-                login with data stored in your browser.</p>
-            <p>We must implement:</p>
+            <h3>Critical Backend Components Required</h3>
+
+            <h4>1. Authentication & Authorization Service</h4>
             <ul>
-                <li><strong>Registration Flow:</strong> A page for new users (e.g., vendor focal points) to sign up.
+                <li><strong>User Management:</strong> Implement user registration and authentication system</li>
+                <li><strong>SSO Integration:</strong> Integrate with Azure Active Directory or company SSO provider</li>
+                <li><strong>Role-Based Access Control (RBAC):</strong> Implement roles (Admin, Manager, Vendor, Viewer)
+                    with granular permissions</li>
+                <li><strong>Session Management:</strong> Token-based authentication (JWT) with secure refresh mechanisms
                 </li>
-                <li><strong>Sign-In Validation:</strong> A backend service to verify passwords securely.</li>
-                <li><strong>Access Control:</strong> Locking down editing rights so Vendors can only <em>see</em> their
-                    scores, while Managers can <em>edit</em> them.</li>
+            </ul>
+
+            <h4>2. Database & Data Persistence</h4>
+            <ul>
+                <li><strong>Primary Database:</strong> PostgreSQL, MongoDB, or SQL Server for structured audit data</li>
+                <li><strong>Schema Requirements:</strong>
+                    <ul>
+                        <li>Users table (id, email, role, permissions, created_at)</li>
+                        <li>Audits table (id, vendor_id, period, status, scores, created_by, updated_at)</li>
+                        <li>Configurations table (scorecard_config JSON, KPI definitions, weights)</li>
+                        <li>Vendors table (id, name, contact_info, assigned_managers)</li>
+                    </ul>
+                </li>
+                <li><strong>File Storage:</strong> Azure Blob Storage or S3 for PDF reports and file attachments</li>
+            </ul>
+
+            <h4>3. RESTful API Endpoints Required</h4>
+            <p><strong>Base URL:</strong> <code>/api/v1</code></p>
+            <ul>
+                <li><code>POST /auth/login</code> - User authentication</li>
+                <li><code>POST /auth/register</code> - User registration (admin only)</li>
+                <li><code>GET /audits</code> - List audits (filtered by user role)</li>
+                <li><code>POST /audits</code> - Create new audit</li>
+                <li><code>GET /audits/:id</code> - Get specific audit details</li>
+                <li><code>PUT /audits/:id</code> - Update audit data</li>
+                <li><code>DELETE /audits/:id</code> - Delete audit (admin only)</li>
+                <li><code>POST /audits/:id/finalize</code> - Mark audit as complete</li>
+                <li><code>GET /audits/:id/pdf</code> - Generate and download PDF report</li>
+                <li><code>POST /files/upload</code> - Upload audit attachments</li>
+                <li><code>GET /configs</code> - Get scorecard configurations</li>
+                <li><code>PUT /configs</code> - Update configurations (admin only)</li>
+                <li><code>GET /vendors</code> - List all vendors</li>
+                <li><code>POST /vendors</code> - Create vendor (admin only)</li>
+            </ul>
+
+            <h4>4. Real-Time Data Synchronization (Optional)</h4>
+            <ul>
+                <li><strong>WebSocket Support:</strong> For real-time audit updates when multiple users are viewing the
+                    same data</li>
+                <li><strong>Technology Options:</strong> Socket.io, SignalR, or native WebSocket implementation</li>
             </ul>
         </div>
 
-        <h3>Integration Path</h3>
-        <ol>
-            <li><strong>Frontend (Portable):</strong> The UI (React) is ready to deploy. It can be hosted on any web
-                server, Sharepoint page, or Azure Static Web App.</li>
-            <li><strong>Data Storage (The Change Required):</strong>
-                <ul>
-                    <li><strong>Current:</strong> Uses User's Browser Memory.</li>
-                    <li><strong>Target:</strong> Needs to connect to an API (Node.js) or SharePoint Lists.</li>
-                </ul>
-            </li>
-            <li><strong>Authentication:</strong> Needs integration with <strong>SSO (Single Sign-On)</strong> or Azure
-                Active Directory for security.</li>
-        </ol>
+
+
     </section>
 
 </body>
