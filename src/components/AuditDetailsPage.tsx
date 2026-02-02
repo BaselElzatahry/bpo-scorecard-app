@@ -95,7 +95,7 @@ const AttachmentThumbnail: React.FC<{ attachment: AttachmentMetadata; onClick: (
                 <img
                     src={imageUrl}
                     alt={attachment.name}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    className="attachment-image w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-bold text-slate-900 pointer-events-none">
@@ -247,10 +247,12 @@ export const AuditDetailsPage: React.FC = () => {
             if (!element) throw new Error('Content not found');
 
             const canvas = await html2canvas(element, {
-                scale: 2,
+                scale: 3, // Increased from 2 to 3 for better image quality
                 useCORS: true,
+                allowTaint: false,
                 logging: false,
                 backgroundColor: '#ffffff',
+                imageTimeout: 0, // Ensure all images load completely
                 onclone: (doc: Document) => {
                     const el = doc.getElementById('audit-details-content');
                     if (el) {
@@ -264,6 +266,33 @@ export const AuditDetailsPage: React.FC = () => {
                         // Ensure full height
                         el.style.height = 'auto';
                         el.style.overflow = 'visible';
+
+                        // Fix attachment images for PDF export - show full dimensions
+                        const attachmentContainers = el.querySelectorAll('.attachment-container');
+                        attachmentContainers.forEach((container: Element) => {
+                            const htmlContainer = container as HTMLElement;
+                            // Remove square aspect ratio constraint
+                            htmlContainer.classList.remove('aspect-square');
+                            // Set to auto height to allow natural image dimensions
+                            htmlContainer.style.height = 'auto';
+                            htmlContainer.style.aspectRatio = 'auto';
+                            // Add max constraints to prevent excessively large images
+                            htmlContainer.style.maxHeight = '400px';
+                            htmlContainer.style.width = '100%';
+                        });
+
+                        // Fix attachment images to show full content without cropping
+                        const attachmentImages = el.querySelectorAll('.attachment-image');
+                        attachmentImages.forEach((img: Element) => {
+                            const htmlImg = img as HTMLElement;
+                            // Change from object-cover (crops) to object-contain (shows full image)
+                            htmlImg.classList.remove('object-cover');
+                            htmlImg.classList.add('object-contain');
+                            // Ensure image takes natural dimensions
+                            htmlImg.style.width = '100%';
+                            htmlImg.style.height = 'auto';
+                            htmlImg.style.maxHeight = '400px';
+                        });
                     }
                 }
             });
@@ -560,7 +589,7 @@ export const AuditDetailsPage: React.FC = () => {
                                                                     {entry.attachments.map((attachment, idx) => (
                                                                         <div
                                                                             key={idx}
-                                                                            className="group relative bg-white rounded-xl border-2 border-slate-200 overflow-hidden cursor-pointer hover:border-keeta-primary hover:shadow-lg transition-all aspect-square"
+                                                                            className="attachment-container group relative bg-white rounded-xl border-2 border-slate-200 overflow-hidden cursor-pointer hover:border-keeta-primary hover:shadow-lg transition-all aspect-square"
                                                                             title="Click to view full size"
                                                                         >
                                                                             <AttachmentThumbnail
