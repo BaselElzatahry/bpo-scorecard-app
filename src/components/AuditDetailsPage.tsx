@@ -51,6 +51,25 @@ const AttachmentThumbnail: React.FC<{ attachment: AttachmentMetadata; onClick: (
         }
     };
 
+    const handleDownload = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            const record = await indexedDBService.getAttachment(attachment.id);
+            if (!record) return;
+
+            const url = URL.createObjectURL(record.blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = attachment.name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Failed to download attachment:', err);
+        }
+    };
+
     const isImage = attachment.type.startsWith('image/');
 
     if (isLoading) {
@@ -78,22 +97,38 @@ const AttachmentThumbnail: React.FC<{ attachment: AttachmentMetadata; onClick: (
                     alt={attachment.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none">
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-bold text-slate-900">
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-full text-xs font-bold text-slate-900 pointer-events-none">
                         Click to enlarge
                     </div>
                 </div>
+                {/* Download button */}
+                <button
+                    onClick={handleDownload}
+                    className="absolute top-2 right-2 bg-keeta-primary hover:bg-yellow-300 text-slate-900 p-2 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    title="Download file"
+                >
+                    <Download size={16} />
+                </button>
             </div>
         );
     }
 
     return (
-        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-4 text-center">
+        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 p-4 text-center relative">
             <FileText size={32} className="mb-2" />
             <span className="text-xs font-medium truncate w-full px-2">{attachment.name}</span>
             <span className="text-[10px] text-slate-400 mt-1">
                 {(attachment.size / 1024).toFixed(0)}KB
             </span>
+            {/* Download button for non-images */}
+            <button
+                onClick={handleDownload}
+                className="absolute top-2 right-2 bg-keeta-primary hover:bg-yellow-300 text-slate-900 p-1.5 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Download file"
+            >
+                <Download size={14} />
+            </button>
         </div>
     );
 };
@@ -144,6 +179,29 @@ export const AuditDetailsPage: React.FC = () => {
     }, [usedConfigId, globalConfig]);
 
     const vendor = vendors.find(v => v.id === vendorId);
+
+    // Auto-expand categories that have attachments on initial load
+    useEffect(() => {
+        if (auditEntries.length > 0 && displayConfig.categories) {
+            const categoriesToExpand = new Set<string>();
+
+            displayConfig.categories.forEach(category => {
+                const categoryKpis = displayConfig.kpis.filter(kpi => kpi.categoryId === category.id);
+                const hasAttachments = categoryKpis.some(kpi => {
+                    const entry = auditEntries.find(e => e.kpiId === kpi.id);
+                    return entry?.attachments && entry.attachments.length > 0;
+                });
+
+                if (hasAttachments) {
+                    categoriesToExpand.add(category.id);
+                }
+            });
+
+            if (categoriesToExpand.size > 0) {
+                setExpandedCategories(categoriesToExpand);
+            }
+        }
+    }, [auditEntries, displayConfig]);
 
     if (!vendor || auditEntries.length === 0) {
         return (
