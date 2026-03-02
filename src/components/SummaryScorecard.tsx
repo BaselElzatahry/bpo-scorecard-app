@@ -7,10 +7,10 @@ import {
 import clsx from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { VendorSelector } from './VendorSelector';
 import { scorecardConfigService } from '../services/scorecard-config.service';
+import { generateSingleVendorPDF } from '../utils/pdf-report.util';
+import type { VendorReportData } from '../utils/pdf-report.util';
 
 export const SummaryScorecard: React.FC = () => {
     const {
@@ -162,67 +162,52 @@ export const SummaryScorecard: React.FC = () => {
         XLSX.writeFile(wb, `Scorecard_${vendor?.name}_${currentPeriod}.xlsx`);
     };
 
-    const handleExportPDF = async () => {
-        if (!dashboardRef.current) return;
+    const handleExportPDF = () => {
+        if (!results || !currentVendorId || !currentPeriod) return;
 
-        try {
-            const canvas = await html2canvas(dashboardRef.current, {
-                scale: 2,
-                useCORS: true,
-                logging: false,
-                backgroundColor: '#ffffff',
-                onclone: (doc: Document) => {
-                    const el = doc.querySelector('[class*="space-y-8"]') as HTMLElement;
-                    if (el) {
-                        // Remove animations
-                        el.classList.remove('animate-in', 'fade-in');
+        // Resolve the config used for this audit
+        const auditKey = `${currentVendorId}-${currentPeriod}`;
+        const auditEntries = audits[auditKey] ?? [];
+        const configId = auditEntries[0]?.scorecardConfigId ?? viewConfigId;
+        const auditConfig = configId ? scorecardConfigService.getConfig(configId) : null;
+        const cats = auditConfig?.categories ?? config.categories;
+        const kpis = auditConfig?.kpis ?? config.kpis;
 
-                        // Hide buttons
-                        const buttons = el.querySelectorAll('button');
-                        buttons.forEach((b: Element) => (b as HTMLElement).style.display = 'none');
+        const currentStatus = auditStatus[
+            `${currentVendorId}-${currentPeriod}-${configId}`
+        ] ?? auditStatus[`${currentVendorId}-${currentPeriod}`] ?? 'draft';
 
-                        // Ensure full height
-                        el.style.height = 'auto';
-                        el.style.overflow = 'visible';
-                    }
-                }
-            });
+        const data: VendorReportData = {
+            vendorName: vendors.find(v => v.id === currentVendorId)?.name ?? 'Unknown',
+            period: currentPeriod,
+            score: results.score,
+            rag: results.rag,
+            status: currentStatus,
+            categories: cats.map(cat => {
+                const cs = results.categoryScores[cat.id];
+                const catKpis = kpis.filter(k => k.categoryId === cat.id);
+                return {
+                    label: cat.label,
+                    weight: cat.weight,
+                    score: cs?.score ?? 0,
+                    rag: cs?.rag ?? 'red',
+                    met: cs?.met ?? 0,
+                    done: cs?.done ?? 0,
+                    kpis: catKpis.map(kpi => {
+                        const ks = cs?.kpiScores?.[kpi.id];
+                        return {
+                            label: kpi.label,
+                            score: ks?.score ?? 0,
+                            rag: ks?.rag ?? 'red',
+                            met: ks?.met ?? 0,
+                            done: ks?.done ?? 0,
+                        };
+                    }),
+                };
+            }),
+        };
 
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF({
-                orientation: 'p',
-                unit: 'mm',
-                format: 'a4'
-            });
-
-            // Add margins to the PDF
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-            const margin = 5; // 5mm margins
-            const imgWidth = pdfWidth - (2 * margin);
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-            let heightLeft = imgHeight;
-            let position = margin;
-
-            // Add first page with margins
-            pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
-            heightLeft -= (pdfHeight - 2 * margin);
-
-            // Add subsequent pages
-            while (heightLeft > 0) {
-                position = -(imgHeight - heightLeft) + margin;
-                pdf.addPage();
-                pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
-                heightLeft -= (pdfHeight - 2 * margin);
-            }
-
-            const vendor = vendors.find(v => v.id === currentVendorId);
-            pdf.save(`Dashboard_${vendor?.name}_${currentPeriod}.pdf`);
-        } catch (error) {
-            console.error('PDF export failed:', error);
-            alert('Export failed. Please try again.');
-        }
+        generateSingleVendorPDF(data);
     };
 
     return (

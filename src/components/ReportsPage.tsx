@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
-import { Calendar, Trash2, Download, Search, Edit, CheckSquare, Square, CheckCircle } from 'lucide-react';
+import { Calendar, Trash2, Download, Search, Edit, CheckSquare, Square, FileBarChart } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { calculateScores } from '../utils/scoring';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,8 @@ import clsx from 'clsx';
 import { ConfirmationModal } from './ConfirmationModal';
 import { VendorSelector } from './VendorSelector';
 import { scorecardConfigService } from '../services/scorecard-config.service';
+import { generateConsolidatedPDF } from '../utils/pdf-report.util';
+import type { VendorReportData } from '../utils/pdf-report.util';
 
 export const ReportsPage: React.FC = () => {
     const { vendors, config, audits, startedAudits, auditStatus, deleteAudit, setVendor, setPeriod, setAuditStatus, markAsEditing, activeScorecardId } = useApp();
@@ -33,6 +35,8 @@ export const ReportsPage: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [minScore, setMinScore] = useState<number | ''>('');
     const [maxScore, setMaxScore] = useState<number | ''>('');
+    // Month for the consolidated export — defaults to current month
+    const [execMonth, setExecMonth] = useState(new Date().toISOString().slice(0, 7));
 
     // New state for period picker popover
     const [showPeriodPicker, setShowPeriodPicker] = useState(false);
@@ -403,6 +407,57 @@ export const ReportsPage: React.FC = () => {
         XLSX.writeFile(wb, `Keeta_Report_Selected_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
+    // Build VendorReportData for each filtered audit in the selected month and generate consolidated PDF
+    const handleConsolidatedExport = () => {
+        // Collect all started audit keys for the selected execMonth
+        const monthAudits = Object.keys(startedAudits)
+            .filter(k => startedAudits[k])
+            .map(k => filteredAudits.find(a => a.key === k))
+            .filter((a): a is typeof filteredAudits[0] => !!a && a.period === execMonth);
+
+        if (monthAudits.length === 0) {
+            showToast('No audits found for the selected month.', 'error');
+            return;
+        }
+
+        const vendorDataList: VendorReportData[] = monthAudits.map(audit => {
+            const vendorAudits = audits[audit.key] ?? [];
+            let cats = config.categories;
+            let kpis = config.kpis;
+            if (audit.configId) {
+                const ac = scorecardConfigService.getConfig(audit.configId);
+                if (ac) { cats = ac.categories; kpis = ac.kpis; }
+            }
+            const results = calculateScores(vendorAudits, cats, kpis, audit.vendorId, audit.period);
+            return {
+                vendorName: audit.vendorName,
+                period: audit.period,
+                score: results.score,
+                rag: results.rag,
+                status: audit.status,
+                categories: cats.map(cat => {
+                    const cs = results.categoryScores[cat.id];
+                    return {
+                        label: cat.label,
+                        weight: cat.weight,
+                        score: cs?.score ?? 0,
+                        rag: cs?.rag ?? 'red',
+                        met: cs?.met ?? 0,
+                        done: cs?.done ?? 0,
+                        kpis: kpis
+                            .filter(k => k.categoryId === cat.id)
+                            .map(kpi => {
+                                const ks = cs?.kpiScores?.[kpi.id];
+                                return { label: kpi.label, score: ks?.score ?? 0, rag: ks?.rag ?? 'red', met: ks?.met ?? 0, done: ks?.done ?? 0 };
+                            }),
+                    };
+                }),
+            };
+        });
+
+        generateConsolidatedPDF(vendorDataList, execMonth);
+    };
+
     return (
         <div className="space-y-6 animate-in fade-in pb-20">
 
@@ -545,6 +600,29 @@ export const ReportsPage: React.FC = () => {
                     <option value="score-desc">Score ↓</option>
                     <option value="score-asc">Score ↑</option>
                 </select>
+            </div>
+
+            {/* ── Export Bar ───────────────────────────────────────────────────── */}
+            <div className="flex items-center justify-between rounded-xl bg-slate-900 px-5 py-3 shadow-sm">
+                <div>
+                    <p className="text-sm font-semibold text-white">Monthly Consolidated Report</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Download a PDF for all vendors in the selected month</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <input
+                        type="month"
+                        value={execMonth}
+                        onChange={e => setExecMonth(e.target.value)}
+                        className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                    />
+                    <button
+                        onClick={handleConsolidatedExport}
+                        className="flex items-center gap-2 rounded-lg bg-yellow-400 px-4 py-2 text-sm font-bold text-slate-900 hover:bg-yellow-300 transition shadow"
+                    >
+                        <FileBarChart size={15} />
+                        Download Report
+                    </button>
+                </div>
             </div>
 
             {/* Vendor Filters */}
