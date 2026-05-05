@@ -65,16 +65,18 @@ const C = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function ragFg(rag: string): RGB {
+    if (rag === 'na') return [148, 163, 184] as RGB; // slate-400
     if (rag === 'green') return C.green;
     if (rag === 'amber') return C.amber;
     return C.red;
 }
 function ragBg(rag: string): RGB {
+    if (rag === 'na') return [241, 245, 249] as RGB; // slate-100
     if (rag === 'green') return C.greenL;
     if (rag === 'amber') return C.amberL;
     return C.redL;
 }
-function ragLabel(rag: string) { return rag.toUpperCase(); }
+function ragLabel(rag: string) { return rag === 'na' ? 'N/A' : rag.toUpperCase(); }
 
 function fmtPeriod(p: string) {
     try { return new Date(p + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); }

@@ -389,7 +389,7 @@ export function calculateScores(
                 // KPI is explicitly marked N/A
                 kpiScores[kpi.id] = {
                     score: -1, // Sentinel: N/A
-                    rag: 'green', // N/A doesn't penalise
+                    rag: 'na', // N/A doesn't penalise
                     met: 0,
                     done: 0,
                     missed: 0
@@ -417,7 +417,7 @@ export function calculateScores(
         categoryScores[cat.id] = {
             categoryId: cat.id,
             score: finalCatScore,
-            rag: catIsNA ? 'green' : getRagStatus(finalCatScore),
+            rag: catIsNA ? 'na' : getRagStatus(finalCatScore),
             met: catMet,
             done: catDone,
             missed: catMissed,

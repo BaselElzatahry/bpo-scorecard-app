@@ -29,6 +29,7 @@ export const ScoreBadge: React.FC<ScoreBadgeProps> = ({
                 'inline-flex items-center gap-1 rounded-full font-bold',
                 sizeClasses[size],
                 {
+                    'bg-slate-100 text-slate-400': rag === 'na',
                     'bg-green-50 text-green-600': rag === 'green',
                     'bg-amber-50 text-amber-600': rag === 'amber',
                     'bg-red-50 text-red-600': rag === 'red',
@@ -36,8 +37,7 @@ export const ScoreBadge: React.FC<ScoreBadgeProps> = ({
                 className
             )}
         >
-            {Math.round(score)}
-            {showPercentage && '%'}
+            {rag === 'na' ? 'N/A' : `${Math.round(score)}${showPercentage ? '%' : ''}`}
         </span>
     );
 };

@@ -771,13 +771,14 @@ export const ReportsPage: React.FC = () => {
                                     <td className="px-6 py-4">
                                         <span className={clsx(
                                             "text-lg font-bold",
+                                            audit.rag === 'na' && "text-slate-400",
                                             audit.rag === 'green' && "text-green-500",
                                             audit.rag === 'amber' && "text-amber-500",
                                             audit.rag === 'red' && "text-red-500"
                                         )}>
-                                            {Math.round(audit.score)}
+                                            {audit.rag === 'na' ? 'N/A' : Math.round(audit.score)}
                                         </span>
-                                        <span className="text-xs text-slate-400"> / 100</span>
+                                        {audit.rag !== 'na' && <span className="text-xs text-slate-400"> / 100</span>}
                                     </td>
 
                                     <td className="px-6 py-4">

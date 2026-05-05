@@ -698,10 +698,11 @@ export const AuditPage: React.FC = () => {
                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Category Score</div>
                         <div className={clsx(
                             "text-2xl font-black",
+                            categoryScore.rag === 'na' ? "text-slate-400" :
                             categoryScore.rag === 'green' ? "text-green-500" :
                                 categoryScore.rag === 'amber' ? "text-amber-500" : "text-red-500"
                         )}>
-                            {categoryScore.score.toFixed(1)}%
+                            {categoryScore.rag === 'na' ? 'N/A' : `${categoryScore.score.toFixed(1)}%`}
                         </div>
                     </div>
                 </div>

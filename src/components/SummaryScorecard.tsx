@@ -430,12 +430,13 @@ export const SummaryScorecard: React.FC = () => {
                                                 {/* RAG Badge */}
                                                 <div className={clsx(
                                                     "px-5 py-2 rounded-full text-sm font-bold uppercase tracking-wider text-center shadow-md",
+                                                    results?.rag === 'na' ? 'bg-white/10 text-white/50' :
                                                     results?.rag === 'green' ? 'bg-green-500/25 text-green-300' :
                                                         results?.rag === 'amber' ? 'bg-amber-500/25 text-amber-300' :
                                                             results?.rag === 'red' ? 'bg-red-500/25 text-red-300' :
                                                                 'bg-white/10 text-white/60'
                                                 )}>
-                                                    {results?.rag ?? 'N/A'}
+                                                    {results?.rag === 'na' ? 'N/A' : (results?.rag ?? 'N/A')}
                                                 </div>
 
                                                 {/* Delta Indicator */}
@@ -587,11 +588,12 @@ export const SummaryScorecard: React.FC = () => {
                                                 </div>
                                                 <div className={clsx(
                                                     "text-3xl md:text-4xl font-extrabold transition-colors",
+                                                    catScore.rag === 'na' ? 'text-slate-400' :
                                                     catScore.rag === 'green' ? 'text-green-500' :
                                                         catScore.rag === 'amber' ? 'text-amber-500' :
                                                             'text-red-500'
                                                 )}>
-                                                    {Math.round(catScore.score)}%
+                                                    {catScore.rag === 'na' ? 'N/A' : `${Math.round(catScore.score)}%`}
                                                 </div>
                                             </div>
 
@@ -600,11 +602,12 @@ export const SummaryScorecard: React.FC = () => {
                                                 <div
                                                     className={clsx(
                                                         "h-full rounded-full transition-all duration-500",
+                                                        catScore.rag === 'na' ? 'bg-slate-200' :
                                                         catScore.rag === 'green' ? 'bg-gradient-to-r from-green-400 to-green-500' :
                                                             catScore.rag === 'amber' ? 'bg-gradient-to-r from-amber-400 to-amber-500' :
                                                                 'bg-gradient-to-r from-red-400 to-red-500'
                                                     )}
-                                                    style={{ width: `${catScore.score}%` }}
+                                                    style={{ width: catScore.rag === 'na' ? '100%' : `${catScore.score}%` }}
                                                 />
                                             </div>
 

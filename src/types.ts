@@ -99,7 +99,7 @@ export interface AuditSession {
 
 export interface ScoreResult {
     score: number;
-    rag: 'green' | 'amber' | 'red';
+    rag: 'green' | 'amber' | 'red' | 'na';
     met: number;
     done: number;
     missed: number;
@@ -137,5 +137,5 @@ export interface AggregatedScoreResult extends OverallScoreResult {
     periodsIncluded: string[];
 }
 
-export type RAGStatus = 'green' | 'amber' | 'red';
+export type RAGStatus = 'green' | 'amber' | 'red' | 'na';
 

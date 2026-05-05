@@ -37,12 +37,13 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
                 <div
                     className={clsx(
                         'h-full rounded-full transition-all duration-500',
+                        rag === 'na' && 'bg-slate-200',
                         rag === 'green' && 'bg-gradient-to-r from-green-400 to-green-500',
                         rag === 'amber' && 'bg-gradient-to-r from-amber-400 to-amber-500',
                         rag === 'red' && 'bg-gradient-to-r from-red-400 to-red-500',
                         !rag && 'bg-gradient-to-r from-keeta-primary to-amber-400'
                     )}
-                    style={{ width: `${normalizedValue}%` }}
+                    style={{ width: rag === 'na' ? '100%' : `${normalizedValue}%` }}
                 />
             </div>
         </div>
