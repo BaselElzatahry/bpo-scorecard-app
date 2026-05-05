@@ -9,7 +9,7 @@ import { calculateComplianceScore, getRagColor } from '../utils/scoring';
 import { validateScore, validateImageUpload, validateAuditCompletion, ValidationError } from '../utils/validation';
 import { v4 as uuidv4 } from 'uuid';
 import clsx from 'clsx';
-import { Lock, ChevronRight, ChevronLeft, CheckCircle2, ShieldAlert, Paperclip, X, FileText, RotateCcw, Loader2, Save, Check, Undo, Redo, LogOut } from 'lucide-react';
+import { Lock, ChevronRight, ChevronLeft, CheckCircle2, ShieldAlert, Paperclip, X, FileText, RotateCcw, Loader2, Save, Check, Undo, Redo, LogOut, Ban } from 'lucide-react';
 import { indexedDBService } from '../services/indexedDB.service';
 import { scorecardConfigService } from '../services/scorecard-config.service';
 
@@ -180,6 +180,22 @@ export const AuditPage: React.FC = () => {
     const category = scorecardConfig.categories.find(c => c.id === categoryId);
     const categoryKpis = scorecardConfig.kpis.filter(k => k.categoryId === categoryId);
 
+    // Check if this category is currently marked N/A
+    const isCategoryMarkedNA = React.useMemo(() => {
+        if (!category) return false;
+        const key = currentConfigId
+            ? `${currentVendorId}-${currentPeriod}-${currentConfigId}`
+            : `${currentVendorId}-${currentPeriod}`;
+        const currentAudits = audits[key] || [];
+        return currentAudits.some(a => a.categoryId === category.id && a.isNA === true);
+    }, [audits, category, currentVendorId, currentPeriod, currentConfigId]);
+
+    // Check if this category has a section tag (only section-tagged categories support N/A)
+    const hasSectionTag = React.useMemo(() => {
+        if (!category?.description) return false;
+        return /section:\w+/.test(category.description);
+    }, [category]);
+
     // Validate category and redirect if invalid (e.g. when switching models)
     useEffect(() => {
         if (!category && scorecardConfig.categories.length > 0) {
@@ -302,6 +318,39 @@ export const AuditPage: React.FC = () => {
         if (field !== 'commentsForMissed') {
             setValidationError(null);
         }
+    };
+
+    // ── N/A Toggle: marks the entire category as Not Applicable ──────────────
+    // This creates a sentinel audit entry with isNA=true for the first KPI in the
+    // category, which the scoring engine uses to trigger weight redistribution.
+    const handleToggleCategoryNA = () => {
+        const isCurrentlyNA = categoryKpis.some(kpi => {
+            const entry = getAuditEntry(kpi.id);
+            return entry.isNA === true;
+        });
+
+        categoryKpis.forEach(kpi => {
+            const entry = getAuditEntry(kpi.id);
+            const newData = {
+                ...entry,
+                vendorId: currentVendorId,
+                period: currentPeriod,
+                categoryId: category.id,
+                kpiId: kpi.id,
+                id: entry.id.startsWith('temp-') ? uuidv4() : entry.id,
+                isNA: !isCurrentlyNA,
+                // Reset numeric fields when marking as N/A
+                ...(!isCurrentlyNA ? { auditsDone: 0, auditsMet: 0, auditsMissed: 0 } : {}),
+            };
+            updateAudit(newData);
+        });
+
+        showToast(
+            !isCurrentlyNA
+                ? `"${category.label}" marked as N/A — weight will be redistributed`
+                : `"${category.label}" N/A status removed`,
+            !isCurrentlyNA ? 'info' : 'success'
+        );
     };
 
     const handleBinaryUpdate = (kpiId: string, isPass: boolean) => {
@@ -561,11 +610,16 @@ export const AuditPage: React.FC = () => {
             <div className="flex items-center justify-between bg-white p-6 rounded-2xl shadow-sm border border-slate-200 sticky top-4 z-30">
                 <div>
                     <div className="flex items-center gap-3 mb-1">
-                        <h2 className="text-2xl font-black text-slate-900">{category.label}</h2>
-                        <span className="px-2 py-1 bg-slate-100 rounded-md text-xs font-bold text-slate-500 uppercase tracking-wider">
-                            Weight: {category.weight}%
-                        </span>
-                        {isAppealed && (
+                                        <h2 className="text-2xl font-black text-slate-900">{category.label}</h2>
+                                        <span className="px-2 py-1 bg-slate-100 rounded-md text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                            Weight: {category.weight}%
+                                        </span>
+                                        {isCategoryMarkedNA && (
+                                            <span className="px-2 py-1 bg-slate-400/10 border border-slate-300 rounded-md text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                                <Ban size={12} /> N/A — Weight Redistributed
+                                            </span>
+                                        )}
+                                        {isAppealed && (
                             <span className="px-2 py-1 bg-amber-100 rounded-md text-xs font-bold text-amber-700 uppercase tracking-wider flex items-center gap-1">
                                 <ShieldAlert size={12} /> Appeal Mode
                             </span>
@@ -576,6 +630,21 @@ export const AuditPage: React.FC = () => {
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
+                    {hasSectionTag && (
+                        <button
+                            onClick={handleToggleCategoryNA}
+                            className={clsx(
+                                "flex items-center gap-2 text-sm py-2 px-4 rounded-xl font-bold border transition-all duration-200",
+                                isCategoryMarkedNA
+                                    ? "bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-300"
+                                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700"
+                            )}
+                            title="Mark this pillar as Not Applicable for this period. Its weight will be redistributed to other pillars in the same section."
+                        >
+                            <Ban size={16} />
+                            {isCategoryMarkedNA ? 'Remove N/A' : 'Mark as N/A'}
+                        </button>
+                    )}
                     <button
                         onClick={handleSaveDraft}
                         className="btn-secondary flex items-center gap-2 text-sm py-2 px-4 shadow-sm hover:shadow"
@@ -638,8 +707,25 @@ export const AuditPage: React.FC = () => {
                 </div>
             </div>
 
+            {/* N/A Banner */}
+            {isCategoryMarkedNA && (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex items-start gap-4 animate-in fade-in">
+                    <div className="p-2 bg-slate-200 rounded-xl">
+                        <Ban size={20} className="text-slate-500" />
+                    </div>
+                    <div>
+                        <p className="font-bold text-slate-700 mb-1">This pillar is marked as Not Applicable</p>
+                        <p className="text-sm text-slate-500">
+                            No data entry is required. The weight of this pillar ({category.weight}%) will be redistributed
+                            evenly across the other applicable pillars in the same section.
+                            Click <strong>Remove N/A</strong> in the header to re-enable data entry.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* KPIs */}
-            <div className="space-y-4">
+            <div className={clsx("space-y-4", isCategoryMarkedNA && "opacity-40 pointer-events-none select-none")}>
                 {categoryKpis.map((kpi, index) => {
                     const entry = getAuditEntry(kpi.id);
 
@@ -647,14 +733,17 @@ export const AuditPage: React.FC = () => {
                     let score: number;
                     let percentage: number;
 
-                    if (entry.auditsDone === 0) {
+                    if (entry.isNA) {
+                        percentage = 0;
+                        score = -1; // N/A sentinel
+                    } else if (entry.auditsDone === 0) {
                         percentage = 0;
                         score = 100;
                     } else {
                         percentage = (entry.auditsMet / entry.auditsDone) * 100;
                         score = calculateComplianceScore(percentage, kpi); // Pass full KPI object
                     }
-                    const rag = getRagColor(score);
+                    const rag = score < 0 ? '#94a3b8' : getRagColor(score);
 
                     let isFailure = false;
                     if (kpi.scoringLogic === 'binary') {
@@ -690,7 +779,7 @@ export const AuditPage: React.FC = () => {
                                     <div className="text-right min-w-[100px]">
                                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Score</div>
                                         <div className="text-3xl font-black transition-colors" style={{ color: rag }}>
-                                            {score.toFixed(0)}
+                                            {score < 0 ? 'N/A' : score.toFixed(0)}
                                         </div>
                                     </div>
                                 </div>
@@ -727,29 +816,23 @@ export const AuditPage: React.FC = () => {
                                             ) : (
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div>
-                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                                                            {kpi.labels?.done || 'Total'}
-                                                        </label>
                                                         <input
                                                             type="number"
                                                             min="0"
                                                             value={entry.auditsDone || ''}
                                                             onChange={(e) => handleInputChange(kpi.id, 'auditsDone', parseInt(e.target.value) || 0)}
                                                             className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-keeta-primary/20 transition-all"
-                                                            placeholder="0"
+                                                            placeholder={kpi.labels?.done || 'Total'}
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                                                            {kpi.labels?.met || 'Met'}
-                                                        </label>
                                                         <input
                                                             type="number"
                                                             min="0"
                                                             value={entry.auditsMet || ''}
                                                             onChange={(e) => handleInputChange(kpi.id, 'auditsMet', parseInt(e.target.value) || 0)}
                                                             className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-keeta-primary/20 transition-all"
-                                                            placeholder="0"
+                                                            placeholder={kpi.labels?.met || 'Met'}
                                                         />
                                                     </div>
                                                 </div>

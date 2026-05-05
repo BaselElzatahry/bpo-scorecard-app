@@ -11,6 +11,7 @@ import { VendorSelector } from './VendorSelector';
 import { scorecardConfigService } from '../services/scorecard-config.service';
 import { generateConsolidatedPDF } from '../utils/pdf-report.util';
 import type { VendorReportData } from '../utils/pdf-report.util';
+import { indexedDBService } from '../services/indexedDB.service';
 
 export const ReportsPage: React.FC = () => {
     const { vendors, config, audits, startedAudits, auditStatus, deleteAudit, setVendor, setPeriod, setAuditStatus, markAsEditing, activeScorecardId } = useApp();
@@ -407,8 +408,10 @@ export const ReportsPage: React.FC = () => {
         XLSX.writeFile(wb, `Keeta_Report_Selected_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
+    const [isExporting, setIsExporting] = useState(false);
+
     // Build VendorReportData for each filtered audit in the selected month and generate consolidated PDF
-    const handleConsolidatedExport = () => {
+    const handleConsolidatedExport = async () => {
         // Collect all started audit keys for the selected execMonth
         const monthAudits = Object.keys(startedAudits)
             .filter(k => startedAudits[k])
@@ -420,42 +423,100 @@ export const ReportsPage: React.FC = () => {
             return;
         }
 
-        const vendorDataList: VendorReportData[] = monthAudits.map(audit => {
-            const vendorAudits = audits[audit.key] ?? [];
-            let cats = config.categories;
-            let kpis = config.kpis;
-            if (audit.configId) {
-                const ac = scorecardConfigService.getConfig(audit.configId);
-                if (ac) { cats = ac.categories; kpis = ac.kpis; }
-            }
-            const results = calculateScores(vendorAudits, cats, kpis, audit.vendorId, audit.period);
-            return {
-                vendorName: audit.vendorName,
-                period: audit.period,
-                score: results.score,
-                rag: results.rag,
-                status: audit.status,
-                categories: cats.map(cat => {
+        setIsExporting(true);
+        try {
+            const vendorDataList: VendorReportData[] = [];
+
+            for (const audit of monthAudits) {
+                const vendorAudits = audits[audit.key] ?? [];
+                let cats = config.categories;
+                let kpis = config.kpis;
+                if (audit.configId) {
+                    const ac = scorecardConfigService.getConfig(audit.configId);
+                    if (ac) { cats = ac.categories; kpis = ac.kpis; }
+                }
+                const results = calculateScores(vendorAudits, cats, kpis, audit.vendorId, audit.period);
+
+                const categoriesData = [];
+                for (const cat of cats) {
                     const cs = results.categoryScores[cat.id];
-                    return {
+                    const catKpis = kpis.filter(k => k.categoryId === cat.id);
+                    const kpiRows = [];
+
+                    for (const kpi of catKpis) {
+                        const ks = cs?.kpiScores?.[kpi.id];
+                        const entry = vendorAudits.find(e => e.kpiId === kpi.id);
+
+                        let attachmentsData: { dataUrl: string; width: number; height: number }[] = [];
+
+                        // Only load attachments if category score < 100
+                        if (cs && cs.score < 100 && entry?.attachments && entry.attachments.length > 0) {
+                            for (const att of entry.attachments) {
+                                let dataUrl = '';
+                                if (att.data) {
+                                    dataUrl = att.data;
+                                } else if (att.id) {
+                                    const record = await indexedDBService.getAttachment(att.id);
+                                    if (record && record.blob.type.startsWith('image/')) {
+                                        dataUrl = await new Promise<string>((resolve) => {
+                                            const reader = new FileReader();
+                                            reader.readAsDataURL(record.blob);
+                                            reader.onloadend = () => resolve(reader.result as string);
+                                        });
+                                    }
+                                }
+                                if (dataUrl) {
+                                    try {
+                                        const dims = await new Promise<{ w: number, h: number }>((resolve, reject) => {
+                                            const img = new Image();
+                                            img.onload = () => resolve({ w: img.width, h: img.height });
+                                            img.onerror = reject;
+                                            img.src = dataUrl;
+                                        });
+                                        attachmentsData.push({ dataUrl, width: dims.w, height: dims.h });
+                                    } catch (e) {
+                                        console.error('Failed to load image dimensions', e);
+                                    }
+                                }
+                            }
+                        }
+
+                        kpiRows.push({
+                            label: kpi.label,
+                            score: ks?.score ?? 0,
+                            rag: ks?.rag ?? 'red',
+                            met: ks?.met ?? 0,
+                            done: ks?.done ?? 0,
+                            comment: entry?.commentsForMissed || undefined,
+                            attachments: attachmentsData
+                        });
+                    }
+
+                    categoriesData.push({
                         label: cat.label,
                         weight: cat.weight,
                         score: cs?.score ?? 0,
                         rag: cs?.rag ?? 'red',
                         met: cs?.met ?? 0,
                         done: cs?.done ?? 0,
-                        kpis: kpis
-                            .filter(k => k.categoryId === cat.id)
-                            .map(kpi => {
-                                const ks = cs?.kpiScores?.[kpi.id];
-                                return { label: kpi.label, score: ks?.score ?? 0, rag: ks?.rag ?? 'red', met: ks?.met ?? 0, done: ks?.done ?? 0 };
-                            }),
-                    };
-                }),
-            };
-        });
+                        kpis: kpiRows
+                    });
+                }
 
-        generateConsolidatedPDF(vendorDataList, execMonth);
+                vendorDataList.push({
+                    vendorName: audit.vendorName,
+                    period: audit.period,
+                    score: results.score,
+                    rag: results.rag,
+                    status: audit.status,
+                    categories: categoriesData
+                });
+            }
+
+            generateConsolidatedPDF(vendorDataList, execMonth);
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     return (
@@ -617,10 +678,20 @@ export const ReportsPage: React.FC = () => {
                     />
                     <button
                         onClick={handleConsolidatedExport}
-                        className="flex items-center gap-2 rounded-lg bg-yellow-400 px-4 py-2 text-sm font-bold text-slate-900 hover:bg-yellow-300 transition shadow"
+                        disabled={isExporting}
+                        className={clsx(
+                            "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition shadow",
+                            isExporting
+                                ? "bg-yellow-400/70 text-slate-900/70 cursor-wait"
+                                : "bg-yellow-400 text-slate-900 hover:bg-yellow-300"
+                        )}
                     >
-                        <FileBarChart size={15} />
-                        Download Report
+                        {isExporting ? (
+                            <div className="w-4 h-4 border-2 border-slate-600 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                            <FileBarChart size={15} />
+                        )}
+                        {isExporting ? 'Exporting...' : 'Download Report'}
                     </button>
                 </div>
             </div>

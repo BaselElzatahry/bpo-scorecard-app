@@ -11,6 +11,7 @@ import { VendorSelector } from './VendorSelector';
 import { scorecardConfigService } from '../services/scorecard-config.service';
 import { generateSingleVendorPDF } from '../utils/pdf-report.util';
 import type { VendorReportData } from '../utils/pdf-report.util';
+import { indexedDBService } from '../services/indexedDB.service';
 
 export const SummaryScorecard: React.FC = () => {
     const {
@@ -162,52 +163,117 @@ export const SummaryScorecard: React.FC = () => {
         XLSX.writeFile(wb, `Scorecard_${vendor?.name}_${currentPeriod}.xlsx`);
     };
 
-    const handleExportPDF = () => {
+    const [isExporting, setIsExporting] = React.useState(false);
+
+    const handleExportPDF = async () => {
         if (!results || !currentVendorId || !currentPeriod) return;
 
-        // Resolve the config used for this audit
-        const auditKey = `${currentVendorId}-${currentPeriod}`;
-        const auditEntries = audits[auditKey] ?? [];
-        const configId = auditEntries[0]?.scorecardConfigId ?? viewConfigId;
-        const auditConfig = configId ? scorecardConfigService.getConfig(configId) : null;
-        const cats = auditConfig?.categories ?? config.categories;
-        const kpis = auditConfig?.kpis ?? config.kpis;
+        setIsExporting(true);
+        try {
+            // Resolve audit key — try plain first, then composite with configId
+            let auditKey = `${currentVendorId}-${currentPeriod}`;
+            let auditEntries = audits[auditKey] ?? [];
 
-        const currentStatus = auditStatus[
-            `${currentVendorId}-${currentPeriod}-${configId}`
-        ] ?? auditStatus[`${currentVendorId}-${currentPeriod}`] ?? 'draft';
+            // Fallback: look for composite key vendorId-period-configId
+            if (auditEntries.length === 0) {
+                const prefix = `${currentVendorId}-${currentPeriod}-`;
+                const foundKey = Object.keys(audits).find(k => k.startsWith(prefix));
+                if (foundKey) {
+                    auditKey = foundKey;
+                    auditEntries = audits[auditKey] ?? [];
+                }
+            }
 
-        const data: VendorReportData = {
-            vendorName: vendors.find(v => v.id === currentVendorId)?.name ?? 'Unknown',
-            period: currentPeriod,
-            score: results.score,
-            rag: results.rag,
-            status: currentStatus,
-            categories: cats.map(cat => {
+            const configId = auditEntries[0]?.scorecardConfigId ?? viewConfigId;
+            const auditConfig = configId ? scorecardConfigService.getConfig(configId) : null;
+            const cats = auditConfig?.categories ?? config.categories;
+            const kpis = auditConfig?.kpis ?? config.kpis;
+
+            const currentStatus =
+                auditStatus[`${currentVendorId}-${currentPeriod}-${configId}`] ??
+                auditStatus[`${currentVendorId}-${currentPeriod}`] ??
+                'draft';
+
+            const categoriesData = [];
+
+            for (const cat of cats) {
                 const cs = results.categoryScores[cat.id];
                 const catKpis = kpis.filter(k => k.categoryId === cat.id);
-                return {
+                const kpiRows = [];
+
+                for (const kpi of catKpis) {
+                    const ks = cs?.kpiScores?.[kpi.id];
+                    const entry = auditEntries.find(e => e.kpiId === kpi.id);
+
+                    let attachmentsData: { dataUrl: string; width: number; height: number }[] = [];
+
+                    // Only load attachments for categories that aren't 100%
+                    if (cs && cs.score < 100 && entry?.attachments && entry.attachments.length > 0) {
+                        for (const att of entry.attachments) {
+                            let dataUrl = '';
+                            if (att.data) {
+                                dataUrl = att.data;
+                            } else if (att.id) {
+                                const record = await indexedDBService.getAttachment(att.id);
+                                if (record && record.blob.type.startsWith('image/')) {
+                                    dataUrl = await new Promise<string>((resolve) => {
+                                        const reader = new FileReader();
+                                        reader.readAsDataURL(record.blob);
+                                        reader.onloadend = () => resolve(reader.result as string);
+                                    });
+                                }
+                            }
+                            if (dataUrl) {
+                                try {
+                                    const dims = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+                                        const img = new Image();
+                                        img.onload = () => resolve({ w: img.width, h: img.height });
+                                        img.onerror = reject;
+                                        img.src = dataUrl;
+                                    });
+                                    attachmentsData.push({ dataUrl, width: dims.w, height: dims.h });
+                                } catch (e) {
+                                    console.error('Failed to load image dimensions', e);
+                                }
+                            }
+                        }
+                    }
+
+                    kpiRows.push({
+                        label: kpi.label,
+                        score: ks?.score ?? 0,
+                        rag: ks?.rag ?? 'red',
+                        met: ks?.met ?? 0,
+                        done: ks?.done ?? 0,
+                        comment: entry?.commentsForMissed || undefined,
+                        attachments: attachmentsData,
+                    });
+                }
+
+                categoriesData.push({
                     label: cat.label,
                     weight: cat.weight,
                     score: cs?.score ?? 0,
                     rag: cs?.rag ?? 'red',
                     met: cs?.met ?? 0,
                     done: cs?.done ?? 0,
-                    kpis: catKpis.map(kpi => {
-                        const ks = cs?.kpiScores?.[kpi.id];
-                        return {
-                            label: kpi.label,
-                            score: ks?.score ?? 0,
-                            rag: ks?.rag ?? 'red',
-                            met: ks?.met ?? 0,
-                            done: ks?.done ?? 0,
-                        };
-                    }),
-                };
-            }),
-        };
+                    kpis: kpiRows,
+                });
+            }
 
-        generateSingleVendorPDF(data);
+            const data: VendorReportData = {
+                vendorName: vendors.find(v => v.id === currentVendorId)?.name ?? 'Unknown',
+                period: currentPeriod,
+                score: results.score,
+                rag: results.rag,
+                status: currentStatus,
+                categories: categoriesData,
+            };
+
+            generateSingleVendorPDF(data);
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     return (
@@ -229,11 +295,19 @@ export const SummaryScorecard: React.FC = () => {
                 <div className="flex items-center gap-3">
                     <button
                         onClick={handleExportPDF}
-                        className="btn-secondary flex items-center gap-2"
+                        disabled={isExporting}
+                        className={clsx(
+                            "btn-secondary flex items-center gap-2",
+                            isExporting && "opacity-75 cursor-wait"
+                        )}
                         title="Download as PDF"
                     >
-                        <Download size={18} />
-                        Export PDF
+                        {isExporting ? (
+                            <div className="w-4 h-4 border-2 border-slate-600 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                            <Download size={18} />
+                        )}
+                        {isExporting ? 'Exporting...' : 'Export PDF'}
                     </button>
                     <button
                         onClick={() => navigate(`/new-audit?vendorId=${currentVendorId}&period=${currentPeriod}`)}

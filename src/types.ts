@@ -44,6 +44,7 @@ export interface AuditEntry {
     auditsMet: number;
     auditsMissed: number;
     commentsForMissed: string;
+    isNA?: boolean; // Marks this KPI/pillar as Not Applicable for the period (triggers dynamic weight redistribution)
     attachments?: Array<{
         // New format (IndexedDB reference)
         id?: string;

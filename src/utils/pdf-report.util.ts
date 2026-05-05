@@ -8,6 +8,8 @@ export interface KpiReportRow {
     rag: 'green' | 'amber' | 'red';
     met: number;
     done: number;
+    comment?: string;
+    attachments?: { dataUrl: string; width: number; height: number }[];
 }
 
 export interface CategoryReportRow {
@@ -37,7 +39,7 @@ const ML = 14;  // left margin
 const MR = 14;  // right margin
 const CW = PW - ML - MR; // content width = 182mm
 const FOOTER_Y = 284;
-const HEADER_H = 38;
+const HEADER_H = 42;
 
 type RGB = [number, number, number];
 
@@ -133,27 +135,52 @@ class PDF {
 // ─── Section renderers ────────────────────────────────────────────────────────
 
 function drawPageHeader(p: PDF, vendor: string, period: string, score: number, rag: 'green' | 'amber' | 'red', status: string) {
+    // Header background
     p.fill(0, 0, PW, HEADER_H, C.navy);
-    p.fill(0, 0, 3, HEADER_H, C.gold); // gold left bar
+    p.fill(0, 0, 3, HEADER_H, C.gold); // gold accent bar
 
-    // Labels & text
+    // ── Left: label / vendor name / period ────────────────────────────────────
+    // "VENDOR PERFORMANCE REPORT" label  (baseline y=9)
     p.txt('VENDOR PERFORMANCE REPORT', ML + 4, 9, { sz: 6.5, c: C.slate4 });
-    p.txt(vendor, ML + 4, 20, { sz: 17, bold: true, c: C.white, mw: 130 });
-    p.txt(fmtPeriod(period), ML + 4, 29, { sz: 8, c: C.slate4 });
+    // Vendor name  (baseline y=22, cap-height ~3mm → visual centre ≈ 19–20mm)
+    p.txt(vendor, ML + 4, 22, { sz: 17, bold: true, c: C.white, mw: 128 });
+    // Period  (baseline y=31)
+    p.txt(fmtPeriod(period), ML + 4, 31, { sz: 8, c: C.slate4 });
 
-    // Status pill
+    // ── Centre-right: Status pill ─────────────────────────────────────────────
+    // Pill rect: x=136, y=11, w=28, h=8
     const statLabel = status.charAt(0).toUpperCase() + status.slice(1);
     const statC: RGB = status === 'finalized' ? C.green : status === 'appealed' ? C.amber : C.slate6;
-    p.fill(138, 8, 26, 7, statC);
-    p.txt(statLabel.toUpperCase(), 151, 13.5, { sz: 6.5, bold: true, c: C.white, align: 'center' });
-    p.txt('Status', 151, 7.5, { sz: 6, c: C.slate4, align: 'center' });
+    // "Status" caption above pill (baseline y=9.5)
+    p.txt('STATUS', 150, 9.5, { sz: 5.5, c: C.slate4, align: 'center' });
+    // Pill background
+    p.fill(136, 11.5, 28, 8.5, statC);
+    // Pill text — baseline at 11.5 + 8.5/2 + cap_half ≈ 11.5 + 4.25 + 1.8 = 17.55 → y=17.5
+    p.txt(statLabel.toUpperCase(), 150, 17.5, { sz: 6.5, bold: true, c: C.white, align: 'center' });
 
-    // Score circle (right side)
+    // ── Right: Score circle ───────────────────────────────────────────────────
+    // Circle: cx=192, cy=19, r=12  → top=7, bottom=31 (all within HEADER_H=38)
     const sc = ragFg(rag);
-    p.circle(192, 19, 12, sc, 1.2);
-    p.txt(String(Math.round(score)), 192, 22, { sz: 15, bold: true, c: sc, align: 'center' });
-    p.txt('%', 192, 26, { sz: 7, c: C.slate4, align: 'center' });
-    p.txt(ragLabel(rag), 192, 31, { sz: 6, bold: true, c: sc, align: 'center' });
+    const cx = 191;
+    const cy = 19;
+    const r = 12;
+    p.circle(cx, cy, r, sc, 1.4);
+
+    // Score number — we want the visual centre of the digit block at cy.
+    // At sz=14 Helvetica bold: cap-height ≈ 14 × 0.72 × 0.264583 ≈ 2.67mm.
+    // To centre: baseline = cy + cap_height/2 = 19 + 1.34 ≈ 20.3 → use 20.5
+    p.txt(String(Math.round(score)), cx, 20.5, { sz: 14, bold: true, c: sc, align: 'center' });
+
+    // "%" — sz=6.5, cap-height ≈ 0.72 × 6.5 × 0.264583 ≈ 1.24mm, visual centre ≈ 0.62mm above baseline.
+    // Place it just below the number: baseline = 20.5 + 4 = 24.5
+    p.txt('%', cx, 24.8, { sz: 6.5, c: C.slate4, align: 'center' });
+
+    // RAG badge — drawn BELOW the circle, outside it
+    // Circle bottom = cy + r = 31. Badge rect at y=32.5, h=5.
+    const ragBadgeBg = ragBg(rag);
+    p.fill(cx - 10, 32.5, 20, 5, ragBadgeBg);
+    // Badge text baseline ≈ 32.5 + 5/2 + 1 = 36 → use 36
+    p.txt(ragLabel(rag), cx, 36.2, { sz: 5.5, bold: true, c: sc, align: 'center' });
 }
 
 function drawFooter(p: PDF, generatedDate: string) {
@@ -284,6 +311,129 @@ function drawFocusAreas(p: PDF, data: VendorReportData, y: number): number {
     return y;
 }
 
+// ─── Evidence Section ──────────────────────────────────────────────────────────
+
+function drawEvidenceSection(p: PDF, data: VendorReportData, startY: number): number {
+    // Include pillar KPIs that have a comment OR attachments (only for categories < 100%)
+    const catsWithEvidence = data.categories.filter(c =>
+        c.score < 100 && c.kpis.some(k =>
+            (k.comment && k.comment.trim().length > 0) ||
+            (k.attachments && k.attachments.length > 0)
+        )
+    );
+
+    if (catsWithEvidence.length === 0) return startY;
+
+    p.page();
+
+    let y = 15;
+    y = drawSectionTitle(p, 'Evidence & Comments (Pillars < 100%)', y);
+    y += 5;
+
+    for (const cat of catsWithEvidence) {
+        if (y > FOOTER_Y - 30) {
+            p.page();
+            y = 15;
+        }
+
+        // Category header bar
+        p.fill(ML, y, CW, 8, C.navy2);
+        p.txt(cat.label.toUpperCase(), ML + 3, y + 5.5, { sz: 8, bold: true, c: C.white });
+        p.txt(`${Math.round(cat.score)}%`, ML + CW - 3, y + 5.5, { sz: 8, bold: true, c: ragFg(cat.rag), align: 'right' });
+        y += 11;
+
+        for (const kpi of cat.kpis) {
+            const hasComment = kpi.comment && kpi.comment.trim().length > 0;
+            const hasAttachments = kpi.attachments && kpi.attachments.length > 0;
+            if (!hasComment && !hasAttachments) continue;
+
+            if (y > FOOTER_Y - 20) {
+                p.page();
+                y = 15;
+                p.fill(ML, y, CW, 8, C.navy2);
+                p.txt(cat.label.toUpperCase() + ' (cont.)', ML + 3, y + 5.5, { sz: 8, bold: true, c: C.white });
+                y += 11;
+            }
+
+            // KPI label row
+            p.fill(ML, y, CW, 7, C.slate1);
+            p.txt(kpi.label, ML + 3, y + 5, { sz: 8, bold: true, c: C.navy2, mw: CW - 30 });
+            p.txt(`${Math.round(kpi.score)}%`, ML + CW - 3, y + 5, { sz: 8, bold: true, c: ragFg(kpi.rag), align: 'right' });
+            y += 9;
+
+            // Comment block
+            if (hasComment) {
+                // Orange/amber left bar for comment
+                p.fill(ML, y, 2, 0, C.amber);  // will be sized dynamically below
+                const commentLines = p.d.splitTextToSize(`"${kpi.comment}"`, CW - 10);
+                const commentBlockH = commentLines.length * 4.5 + 6;
+
+                if (y + commentBlockH + 5 > FOOTER_Y) {
+                    p.page();
+                    y = 15;
+                }
+
+                p.fillStroke(ML, y, CW, commentBlockH, C.amberL, C.amber, 0.3);
+                p.fill(ML, y, 2, commentBlockH, C.amber);
+                p.txt('Comment', ML + 5, y + 4.5, { sz: 6, bold: true, c: C.amber });
+                commentLines.forEach((line: string, i: number) => {
+                    p.txt(line, ML + 5, y + 9 + i * 4.5, { sz: 7, c: C.slate7, mw: CW - 8 });
+                });
+                y += commentBlockH + 4;
+            }
+
+            // Photo attachments
+            if (hasAttachments) {
+                for (const att of kpi.attachments!) {
+                    const maxW = CW;
+                    const maxH = 180;
+
+                    // Native pixel size → mm (96 px/inch → 1 px = 0.264583 mm)
+                    let renderW = att.width * 0.264583;
+                    let renderH = att.height * 0.264583;
+
+                    // Scale down only if needed, never scale up
+                    if (renderW > maxW) {
+                        renderH = renderH * (maxW / renderW);
+                        renderW = maxW;
+                    }
+                    if (renderH > maxH) {
+                        renderW = renderW * (maxH / renderH);
+                        renderH = maxH;
+                    }
+
+                    // Pagination check
+                    if (y + renderH + 8 > FOOTER_Y) {
+                        p.page();
+                        y = 15;
+                        p.fill(ML, y, CW, 8, C.navy2);
+                        p.txt(cat.label.toUpperCase() + ' — ' + kpi.label + ' (cont.)', ML + 3, y + 5.5, { sz: 7, bold: true, c: C.white });
+                        y += 11;
+                    }
+
+                    const xPos = ML + (maxW - renderW) / 2;
+
+                    try {
+                        const type = att.dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+                        p.d.addImage(att.dataUrl, type, xPos, y, renderW, renderH);
+                    } catch (e) {
+                        console.error('Failed to embed image in PDF', e);
+                    }
+
+                    // Thin border frame
+                    p.stroke(xPos, y, renderW, renderH, C.slate4, 0.4);
+                    y += renderH + 8;
+                }
+            }
+
+            y += 4; // gap between KPIs
+        }
+
+        y += 6; // gap between categories
+    }
+    return y;
+}
+
 // ─── Render a complete vendor page ───────────────────────────────────────────
 
 function renderVendorPage(p: PDF, data: VendorReportData, generatedDate: string) {
@@ -294,6 +444,7 @@ function renderVendorPage(p: PDF, data: VendorReportData, generatedDate: string)
     y = drawKpiSection(p, data, y + 2);
     if (y < FOOTER_Y - 30) drawFocusAreas(p, data, y + 2);
     drawFooter(p, generatedDate);
+    drawEvidenceSection(p, data, FOOTER_Y);
 }
 
 // ─── Public APIs ─────────────────────────────────────────────────────────────

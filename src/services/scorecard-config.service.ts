@@ -1,4 +1,5 @@
 import { ScorecardConfig } from '../types';
+import { DEFAULT_SCORECARD_MODELS } from '../data/defaults';
 
 /**
  * Service for managing multiple scorecard configurations
@@ -19,12 +20,45 @@ class ScorecardConfigService {
                 return this.getAllConfigs();
             }
 
-            const configs = JSON.parse(saved);
+            const configs: ScorecardConfig[] = JSON.parse(saved);
+
+            // Migration: inject any missing default scorecards (e.g. V2.0 added later)
+            const injected = this.injectMissingDefaults(configs);
+            if (injected) {
+                return JSON.parse(localStorage.getItem(this.STORAGE_KEY)!);
+            }
+
             console.log(`📋 Loaded ${configs.length} scorecard configuration(s)`);
             return configs;
         } catch (error) {
             console.error('❌ Failed to load scorecard configs:', error);
             return [];
+        }
+    }
+
+    /**
+     * Inject any default scorecards that are missing from the saved list.
+     * This handles the case where a new default scorecard is added to the codebase
+     * but existing users already have configs saved in localStorage.
+     * Returns true if any configs were injected.
+     */
+    private injectMissingDefaults(existing: ScorecardConfig[]): boolean {
+        try {
+            if (!DEFAULT_SCORECARD_MODELS || !Array.isArray(DEFAULT_SCORECARD_MODELS)) return false;
+
+            const existingIds = new Set(existing.map((c: ScorecardConfig) => c.id));
+            const missing = DEFAULT_SCORECARD_MODELS.filter((m: ScorecardConfig) => !existingIds.has(m.id));
+
+            if (missing.length === 0) return false;
+
+            // Prepend missing defaults so they appear first
+            const updated = [...missing, ...existing];
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(updated));
+            console.log(`✅ Injected ${missing.length} missing default scorecard(s): ${missing.map((m: ScorecardConfig) => m.name).join(', ')}`);
+            return true;
+        } catch (e) {
+            console.error('❌ Failed to inject missing defaults:', e);
+            return false;
         }
     }
 
@@ -107,9 +141,6 @@ class ScorecardConfigService {
      * Called on first app load or when no configs exist
      */
     initializeDefaults(): void {
-        // Import default scorecard models
-        const { DEFAULT_SCORECARD_MODELS } = require('../data/defaults');
-
         if (DEFAULT_SCORECARD_MODELS && Array.isArray(DEFAULT_SCORECARD_MODELS)) {
             localStorage.setItem(this.STORAGE_KEY, JSON.stringify(DEFAULT_SCORECARD_MODELS));
             console.log(`✅ Initialized ${DEFAULT_SCORECARD_MODELS.length} default scorecards`);

@@ -184,6 +184,138 @@ export function calculateComplianceScore(
     }
 }
 
+// ============================================================================
+// Dynamic Weight Redistribution (Section 5 of GCC Vendor Scorecard V2.0)
+// ============================================================================
+
+/**
+ * Parse the section tag from a category description.
+ * Categories tagged with "section:onboarding" belong to Section 1.
+ * Categories tagged with "section:ongoing" belong to Section 2.
+ * Untagged categories are treated as standalone (no redistribution).
+ */
+function getCategorySection(cat: Category): string | null {
+    if (!cat.description) return null;
+    const match = cat.description.match(/section:(\w+)/);
+    return match ? match[1] : null;
+}
+
+/**
+ * Determine if a category is entirely N/A for a given period.
+ * A category is N/A if ALL of its KPIs have an audit entry with isNA=true,
+ * OR if the category has no audit entries at all AND at least one KPI has isNA=true.
+ * We use the first KPI's NA flag as the category-level NA indicator.
+ */
+function isCategoryNA(
+    catId: string,
+    kpis: KPI[],
+    relevantAudits: AuditEntry[]
+): boolean {
+    const catKpis = kpis.filter(k => k.categoryId === catId);
+    if (catKpis.length === 0) return false;
+
+    // Check if any audit entry for this category has isNA=true
+    const naAudit = relevantAudits.find(a => a.categoryId === catId && a.isNA === true);
+    return !!naAudit;
+}
+
+/**
+ * Apply dynamic weight redistribution rules (Section 5.2 & 5.3):
+ *
+ * Rule 1 (Pillar-Level NA): If a pillar is NA, redistribute its weight evenly
+ *   across remaining applicable pillars within the same section.
+ *   Section total weight remains unchanged.
+ *
+ * Rule 2 (Section-Level NA): If ALL pillars in a section are NA,
+ *   remove that section entirely. The remaining section becomes 100%.
+ *
+ * Returns a map of categoryId → effective weight after redistribution.
+ */
+function applyDynamicWeightRedistribution(
+    categories: Category[],
+    kpis: KPI[],
+    relevantAudits: AuditEntry[]
+): Record<string, number> {
+    // Group categories by section
+    const sectionMap: Record<string, Category[]> = {};
+    const standalone: Category[] = [];
+
+    categories.forEach(cat => {
+        const section = getCategorySection(cat);
+        if (section) {
+            if (!sectionMap[section]) sectionMap[section] = [];
+            sectionMap[section].push(cat);
+        } else {
+            standalone.push(cat);
+        }
+    });
+
+    const effectiveWeights: Record<string, number> = {};
+
+    // Process each section
+    const sectionKeys = Object.keys(sectionMap);
+    const sectionTotals: Record<string, number> = {};
+
+    // Calculate original section totals
+    sectionKeys.forEach(section => {
+        sectionTotals[section] = sectionMap[section].reduce((sum, cat) => sum + cat.weight, 0);
+    });
+
+    // Determine which sections are entirely NA
+    const sectionIsNA: Record<string, boolean> = {};
+    sectionKeys.forEach(section => {
+        const allNA = sectionMap[section].every(cat => isCategoryNA(cat.id, kpis, relevantAudits));
+        sectionIsNA[section] = allNA;
+    });
+
+    // Calculate total weight of non-NA sections
+    const activeSections = sectionKeys.filter(s => !sectionIsNA[s]);
+    const totalActiveSectionWeight = activeSections.reduce((sum, s) => sum + sectionTotals[s], 0);
+    const totalStandaloneWeight = standalone.reduce((sum, cat) => sum + cat.weight, 0);
+    const grandTotal = totalActiveSectionWeight + totalStandaloneWeight;
+
+    // Scale factor: if some sections are NA, remaining sections scale up to fill 100%
+    const scaleFactor = grandTotal > 0 ? 100 / grandTotal : 1;
+
+    // Apply Rule 1: within each active section, redistribute NA pillar weights
+    sectionKeys.forEach(section => {
+        if (sectionIsNA[section]) {
+            // Entire section is NA — zero weight for all pillars
+            sectionMap[section].forEach(cat => {
+                effectiveWeights[cat.id] = 0;
+            });
+            return;
+        }
+
+        const sectionCats = sectionMap[section];
+        const applicableCats = sectionCats.filter(cat => !isCategoryNA(cat.id, kpis, relevantAudits));
+        const naCats = sectionCats.filter(cat => isCategoryNA(cat.id, kpis, relevantAudits));
+
+        if (naCats.length === 0) {
+            // No redistribution needed within this section
+            sectionCats.forEach(cat => {
+                effectiveWeights[cat.id] = cat.weight * scaleFactor;
+            });
+        } else {
+            // Redistribute NA weights evenly across applicable pillars
+            const naWeight = naCats.reduce((sum, cat) => sum + cat.weight, 0);
+            const redistributedPerPillar = applicableCats.length > 0 ? naWeight / applicableCats.length : 0;
+
+            naCats.forEach(cat => { effectiveWeights[cat.id] = 0; });
+            applicableCats.forEach(cat => {
+                effectiveWeights[cat.id] = (cat.weight + redistributedPerPillar) * scaleFactor;
+            });
+        }
+    });
+
+    // Standalone categories (no section tag) keep their original weight, scaled
+    standalone.forEach(cat => {
+        effectiveWeights[cat.id] = cat.weight * scaleFactor;
+    });
+
+    return effectiveWeights;
+}
+
 export function calculateScores(
     audits: AuditEntry[],
     categories: Category[],
@@ -194,6 +326,9 @@ export function calculateScores(
 
     // Filter audits for this vendor/period
     const relevantAudits = audits.filter(a => a.vendorId === vendorId && a.period === period);
+
+    // Apply dynamic weight redistribution (handles NA pillars per Section 5 rules)
+    const effectiveWeights = applyDynamicWeightRedistribution(categories, kpis, relevantAudits);
 
     const categoryScores: Record<string, any> = {};
     let totalWeightedScore = 0;
@@ -206,6 +341,10 @@ export function calculateScores(
     categories.forEach(cat => {
         const catKpis = kpis.filter(k => k.categoryId === cat.id);
         const kpiScores: Record<string, ScoreResult> = {};
+        const effectiveWeight = effectiveWeights[cat.id] ?? cat.weight;
+
+        // Check if this entire category is N/A
+        const catIsNA = isCategoryNA(cat.id, kpis, relevantAudits);
 
         let catWeightedScore = 0;
         let catWeightDivisor = 0;
@@ -216,9 +355,8 @@ export function calculateScores(
         catKpis.forEach(kpi => {
             const audit = relevantAudits.find(a => a.kpiId === kpi.id);
 
-            if (audit) {
+            if (audit && !audit.isNA) {
                 // Calculate percentage first
-                // Special handling for attrition rate KPI (1.3)
                 let percentage: number;
                 let score: number;
 
@@ -247,6 +385,15 @@ export function calculateScores(
                 catMet += audit.auditsMet;
                 catDone += audit.auditsDone;
                 catMissed += audit.auditsMissed;
+            } else if (audit && audit.isNA) {
+                // KPI is explicitly marked N/A
+                kpiScores[kpi.id] = {
+                    score: -1, // Sentinel: N/A
+                    rag: 'green', // N/A doesn't penalise
+                    met: 0,
+                    done: 0,
+                    missed: 0
+                };
             } else {
                 // Not evaluated
                 kpiScores[kpi.id] = {
@@ -259,22 +406,24 @@ export function calculateScores(
             }
         });
 
-        const finalCatScore = catWeightDivisor > 0 ? catWeightedScore / catWeightDivisor : 0;
+        const finalCatScore = catIsNA ? -1 : (catWeightDivisor > 0 ? catWeightedScore / catWeightDivisor : 0);
 
-        // Only count category towards overall if it had active KPIs
-        if (catWeightDivisor > 0) {
-            totalWeightedScore += finalCatScore * cat.weight;
-            totalWeightDivisor += cat.weight;
+        // Only count category towards overall if it is applicable and had active KPIs
+        if (!catIsNA && catWeightDivisor > 0 && effectiveWeight > 0) {
+            totalWeightedScore += finalCatScore * effectiveWeight;
+            totalWeightDivisor += effectiveWeight;
         }
 
         categoryScores[cat.id] = {
             categoryId: cat.id,
             score: finalCatScore,
-            rag: getRagStatus(finalCatScore),
+            rag: catIsNA ? 'green' : getRagStatus(finalCatScore),
             met: catMet,
             done: catDone,
             missed: catMissed,
-            kpiScores
+            kpiScores,
+            isNA: catIsNA,
+            effectiveWeight,
         };
 
         overallMet += catMet;
