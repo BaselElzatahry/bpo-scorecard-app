@@ -14,9 +14,10 @@ export interface KpiReportRow {
 
 export interface CategoryReportRow {
     label: string;
-    weight: number;
+    weight: number;         // original configured weight
+    effectiveWeight: number; // weight after N/A redistribution
     score: number;
-    rag: 'green' | 'amber' | 'red';
+    rag: 'green' | 'amber' | 'red' | 'na';
     met: number;
     done: number;
     kpis: KpiReportRow[];
@@ -26,7 +27,7 @@ export interface VendorReportData {
     vendorName: string;
     period: string; // YYYY-MM
     score: number;
-    rag: 'green' | 'amber' | 'red';
+    rag: 'green' | 'amber' | 'red' | 'na';
     status: string;
     categories: CategoryReportRow[];
 }
@@ -237,19 +238,33 @@ function drawCategoryTable(p: PDF, data: VendorReportData, y: number): number {
         p.txt(cat.label, cols.name, ry + 6.8, { sz: 8.5, c: C.navy2, mw: 80 });
 
         // Score
-        p.txt(`${Math.round(cat.score)}%`, cols.score, ry + 6.8, { sz: 9.5, bold: true, c: ragFg(cat.rag) });
+        p.txt(cat.rag === 'na' ? 'N/A' : `${Math.round(cat.score)}%`, cols.score, ry + 6.8, { sz: 9.5, bold: true, c: ragFg(cat.rag) });
 
         // Bar (46mm wide)
         const barW = 46;
         p.fill(cols.bar, ry + 3.5, barW, 3, C.slate1);
-        p.fill(cols.bar, ry + 3.5, barW * Math.min(cat.score / 100, 1), 3, ragFg(cat.rag));
+        if (cat.rag !== 'na') {
+            p.fill(cols.bar, ry + 3.5, barW * Math.min(cat.score / 100, 1), 3, ragFg(cat.rag));
+        }
 
         // Badge
         p.fill(cols.status, ry + 2.5, 14, 5.5, ragBg(cat.rag));
         p.txt(ragLabel(cat.rag), cols.status + 7, ry + 6.5, { sz: 6, bold: true, c: ragFg(cat.rag), align: 'center' });
 
-        // Weight
-        p.txt(`${cat.weight}%`, cols.wt, ry + 6.8, { sz: 8, c: C.slate6 });
+        // Weight — show redistribution when effectiveWeight differs from original
+        const isNA = cat.rag === 'na';
+        const redistributed = !isNA && Math.round(cat.effectiveWeight) !== Math.round(cat.weight);
+        if (isNA) {
+            // N/A pillar: show original weight struck through style with "N/A" note
+            p.txt(`${cat.weight}%`, cols.wt, ry + 5.2, { sz: 7, c: C.slate4 });
+            p.txt('(N/A)', cols.wt, ry + 8.8, { sz: 5.5, c: C.slate4 });
+        } else if (redistributed) {
+            // Redistributed: show original → effective, effective in gold to signal change
+            p.txt(`${cat.weight}%`, cols.wt, ry + 4.8, { sz: 6, c: C.slate4 });
+            p.txt(`→ ${Math.round(cat.effectiveWeight)}%`, cols.wt, ry + 8.8, { sz: 7, bold: true, c: C.gold });
+        } else {
+            p.txt(`${cat.weight}%`, cols.wt, ry + 6.8, { sz: 8, c: C.slate6 });
+        }
     });
 
     return y + data.categories.length * rowH + 4;

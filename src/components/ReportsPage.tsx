@@ -495,6 +495,7 @@ export const ReportsPage: React.FC = () => {
                     categoriesData.push({
                         label: cat.label,
                         weight: cat.weight,
+                        effectiveWeight: cs?.effectiveWeight ?? cat.weight,
                         score: cs?.score ?? 0,
                         rag: cs?.rag ?? 'red',
                         met: cs?.met ?? 0,
