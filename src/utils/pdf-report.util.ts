@@ -261,7 +261,7 @@ function drawCategoryTable(p: PDF, data: VendorReportData, y: number): number {
         } else if (redistributed) {
             // Redistributed: show original → effective, effective in gold to signal change
             p.txt(`${cat.weight}%`, cols.wt, ry + 4.8, { sz: 6, c: C.slate4 });
-            p.txt(`→ ${Math.round(cat.effectiveWeight)}%`, cols.wt, ry + 8.8, { sz: 7, bold: true, c: C.gold });
+            p.txt(`> ${Math.round(cat.effectiveWeight)}%`, cols.wt, ry + 8.8, { sz: 7, bold: true, c: C.gold });
         } else {
             p.txt(`${cat.weight}%`, cols.wt, ry + 6.8, { sz: 8, c: C.slate6 });
         }
