@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { useToast } from '../context/ToastContext';
 import { ConfirmationModal } from './ConfirmationModal';
@@ -18,6 +18,12 @@ export const AuditPage: React.FC = () => {
     const { config, audits, updateAudit, currentVendorId, currentPeriod, currentConfigId, clearAudit, setAuditsForKey, startedAudits, startAudit, setAuditStatus, auditStatus, auditConfigs, calculateScore, vendors } = useApp();
     const { showToast } = useToast();
     const navigate = useNavigate();
+    const location = useLocation();
+
+    // When navigating from NewAuditPage, configId is passed in location state so we
+    // can use it immediately on the first render before the async context update settles.
+    const navStateConfigId = (location.state as any)?.configId as string | undefined;
+    const effectiveConfigId = currentConfigId || navStateConfigId;
     const [validationError, setValidationError] = React.useState<string | null>(null);
     const [isResetModalOpen, setIsResetModalOpen] = React.useState(false);
     const [uploadingKpiId, setUploadingKpiId] = React.useState<string | null>(null);
@@ -151,9 +157,12 @@ export const AuditPage: React.FC = () => {
 
     // Load scorecard configuration for this audit (dynamic)
     const scorecardConfig = React.useMemo(() => {
-        // Priority 0: Current Config ID from Context (explicit selection)
-        if (currentConfigId) {
-            const specificConfig = scorecardConfigService.getConfig(currentConfigId);
+        // Priority 0: effectiveConfigId covers both the context value AND the configId
+        // passed via navigation state (navStateConfigId). This prevents a blank page on
+        // the very first render when currentConfigId hasn't propagated from startAudit()
+        // yet (React state updates are async/batched).
+        if (effectiveConfigId) {
+            const specificConfig = scorecardConfigService.getConfig(effectiveConfigId);
             if (specificConfig) return specificConfig;
         }
 
@@ -175,7 +184,7 @@ export const AuditPage: React.FC = () => {
             }
         }
         return config;
-    }, [config, audits, auditConfigs, currentVendorId, currentPeriod, currentConfigId]);
+    }, [config, audits, auditConfigs, currentVendorId, currentPeriod, effectiveConfigId]);
 
     const category = scorecardConfig.categories.find(c => c.id === categoryId);
     const categoryKpis = scorecardConfig.kpis.filter(k => k.categoryId === categoryId);
@@ -204,15 +213,22 @@ export const AuditPage: React.FC = () => {
         }
     }, [category, scorecardConfig, navigate]);
 
-    const isAuditStarted = currentConfigId
-        ? startedAudits[`${currentVendorId}-${currentPeriod}-${currentConfigId}`]
-        : startedAudits[`${currentVendorId}-${currentPeriod}`];
+    // Check both composite key (with effectiveConfigId) and legacy key so a freshly-started
+    // audit is recognised even before the async context state update settles.
+    // effectiveConfigId falls back to the configId passed via navigation state.
+    const isAuditStarted = Boolean(
+        (effectiveConfigId && startedAudits[`${currentVendorId}-${currentPeriod}-${effectiveConfigId}`]) ||
+        startedAudits[`${currentVendorId}-${currentPeriod}`] ||
+        // Also scan all startedAudit keys that match vendor+period in case configId
+        // hasn't propagated to context yet (race condition on first render after navigate)
+        Object.keys(startedAudits).some(
+            k => k.startsWith(`${currentVendorId}-${currentPeriod}`) && startedAudits[k]
+        )
+    );
 
     // Calculate scores for the header
     const scores = calculateScore(currentVendorId, currentPeriod);
     const categoryScore = scores?.categoryScores[categoryId || ''] || { score: 0, rag: 'red' };
-
-    if (!category) return <div>Category not found</div>;
 
     if (!isAuditStarted) {
         return (
@@ -245,6 +261,10 @@ export const AuditPage: React.FC = () => {
             </>
         );
     }
+
+    // If category is not found in this config, the useEffect above will redirect.
+    // Return null here (not an error div) so the redirect can fire cleanly.
+    if (!category) return null;
 
     const getAuditEntry = (kpiId: string) => {
         const key = currentConfigId

@@ -119,7 +119,11 @@ export const NewAuditPage: React.FC = () => {
             const firstCategoryId = config?.categories[0]?.id || 'trainingDelivery';
 
             showToast('Starting new audit...', 'success');
-            navigate(`/audit/${firstCategoryId}`);
+            // Pass configId in navigation state so AuditPage can read it immediately
+            // on first render, before the async context state update settles.
+            navigate(`/audit/${firstCategoryId}`, {
+                state: { configId: selectedConfigId }
+            });
         } catch (error) {
             console.error('Error checking audit:', error);
             showToast('Error checking audit existence', 'error');
